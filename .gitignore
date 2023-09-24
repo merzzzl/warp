@@ -1,4 +1,4 @@
-.vscode
+/.vscode
 .DS_Store
-.tool-versions
-warp
+/.tool-versions
+/warp
