@@ -4,11 +4,13 @@ WARP is a tool designed to forward TCP traffic through an SSH tunnel. It provide
 
 ## Table of Contents
 
-- [Installation](#installation)
-- [Usage](#usage)
-  - [Command Line Options](#command-line-options)
-- [Examples](#examples)
-- [License](#license)
+- [WARP](#warp)
+  - [Table of Contents](#table-of-contents)
+  - [Installation](#installation)
+  - [Usage](#usage)
+    - [Command Line Options](#command-line-options)
+  - [Examples](#examples)
+  - [License](#license)
 
 ## Installation
 
@@ -45,6 +47,8 @@ Here's an example of how to forward TCP traffic through an SSH tunnel on localho
 ```bash
 ./warp -ssh root@127.0.0.1 -tun utun5 -ip 192.168.48.1 -domain . -tui
 ```
+
+![WARP run with TUI mode](README.png)
 
 ## License
 
