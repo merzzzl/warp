@@ -1,9 +1,11 @@
 package dns
 
 import (
+	"context"
 	"net"
 	"strings"
 
+	"github.com/merzzzl/warp/internal/kube"
 	"github.com/merzzzl/warp/internal/log"
 	"github.com/merzzzl/warp/internal/routes"
 	"github.com/merzzzl/warp/internal/tun"
@@ -11,28 +13,36 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
-func X() {
-
-}
-
 type DNS struct {
-	client      *ssh.Client
+	clientSSH   *ssh.Client
+	clientKube  *kube.KubeRoute
 	routes      *routes.Routes
 	originalDNS string
-	remouteDNS  string
+	sshDNS      string
 	Restore     func() error
 	domain      string
 }
 
-func NewDNS(client *ssh.Client, route *routes.Routes, domain string) *DNS {
+func NewDNS(clientSSH *ssh.Client, clientKube *kube.KubeRoute, route *routes.Routes, domain string) *DNS {
 	return &DNS{
-		client: client,
-		routes: route,
-		domain: domain,
+		clientSSH:  clientSSH,
+		clientKube: clientKube,
+		routes:     route,
+		domain:     domain,
 	}
 }
 
-func (s *DNS) Apply(ip string) error {
+func (s *DNS) ApplyK8S(ctx context.Context) error {
+	s.clientKube.SetContext(ctx)
+
+	if err := s.clientKube.LoadDomains(ctx); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (s *DNS) ApplySSH(ip string) error {
 	name, err := tun.DefaultRouteInterface()
 	if err != nil {
 		return err
@@ -58,19 +68,19 @@ func (s *DNS) Apply(ip string) error {
 
 	s.Restore = rlv.Restore
 
-	session, err := s.client.NewSession()
+	session, err := s.clientSSH.NewSession()
 	if err != nil {
 		return err
 	}
 
-	remouteDNS, err := session.CombinedOutput("scutil --dns | grep \"nameserver\\[.\\]\" | awk '{print $3}' | head -n 1")
+	sshDNS, err := session.CombinedOutput("scutil --dns | grep \"nameserver\\[.\\]\" | awk '{print $3}' | head -n 1")
 	if err != nil {
 		return err
 	}
 
-	if len(remouteDNS) != 0 {
-		s.remouteDNS = strings.TrimSpace(string(remouteDNS))
-		s.routes.Add(s.remouteDNS)
+	if len(sshDNS) != 0 {
+		s.sshDNS = strings.TrimSpace(string(sshDNS))
+		s.routes.Add(s.sshDNS)
 	}
 
 	return nil
@@ -105,8 +115,17 @@ func (s *DNS) Handle(conn net.PacketConn) {
 }
 
 func (s *DNS) serveDNS(r *dns.Msg) (msg []byte, err error) {
-	if s.reqContainsDomain(r) {
-		m, err := s.fetchRemoteDNSRecords(r)
+	if s.reqContainsSSHDomain(r) && s.sshDNS != "" {
+		m, err := s.fetchSSHDNSRecords(r)
+		if err != nil {
+			return nil, err
+		}
+
+		return m.Pack()
+	}
+
+	if s.clientKube != nil && s.reqContainsK8SDomain(r) && s.clientKube != nil {
+		m, err := s.fetchK8SDNSRecords(r)
 		if err != nil {
 			return nil, err
 		}
@@ -122,15 +141,15 @@ func (s *DNS) serveDNS(r *dns.Msg) (msg []byte, err error) {
 	return m.Pack()
 }
 
-func (s *DNS) fetchRemoteDNSRecords(r *dns.Msg) (*dns.Msg, error) {
+func (s *DNS) fetchSSHDNSRecords(r *dns.Msg) (*dns.Msg, error) {
 	for _, q := range r.Question {
-		log.Info().Str("cdomain", q.Name).Msg("DNS", "handle remoute dns")
+		log.Info().Str("cdomain", q.Name).Msg("DNS", "handle ssh dns")
 	}
 
 	c := new(dns.Client)
 	c.Net = "tcp"
 
-	response, _, err := c.Exchange(r, s.remouteDNS+":53")
+	response, _, err := c.Exchange(r, s.sshDNS+":53")
 	if err != nil {
 		return nil, err
 	}
@@ -141,6 +160,31 @@ func (s *DNS) fetchRemoteDNSRecords(r *dns.Msg) (*dns.Msg, error) {
 			s.routes.Add(t.A.String())
 		default:
 			continue
+		}
+	}
+
+	return response, nil
+}
+
+func (s *DNS) fetchK8SDNSRecords(r *dns.Msg) (*dns.Msg, error) {
+	response := new(dns.Msg)
+	response.SetReply(r)
+
+	for _, q := range r.Question {
+		log.Info().Str("cdomain", q.Name).Msg("DNS", "handle k8s dns")
+
+		ipAddress, err := s.clientKube.GetDNS(q.Name)
+		if err != nil {
+			return nil, err
+		}
+
+		switch q.Qtype {
+		case dns.TypeA:
+			rr := &dns.A{
+				Hdr: dns.RR_Header{Name: q.Name, Rrtype: dns.TypeA, Class: dns.ClassINET, Ttl: 3600},
+				A:   ipAddress,
+			}
+			response.Answer = append(response.Answer, rr)
 		}
 	}
 
@@ -158,7 +202,17 @@ func (s *DNS) fetchLocalDNSRecords(r *dns.Msg) (*dns.Msg, error) {
 	return response, nil
 }
 
-func (s *DNS) reqContainsDomain(r *dns.Msg) bool {
+func (s *DNS) reqContainsK8SDomain(r *dns.Msg) bool {
+	for _, q := range r.Question {
+		if s.clientKube.IsKubeDomain(q.Name) {
+			return true
+		}
+	}
+
+	return false
+}
+
+func (s *DNS) reqContainsSSHDomain(r *dns.Msg) bool {
 	for _, q := range r.Question {
 		if strings.HasSuffix(q.Name, s.domain) {
 			return true

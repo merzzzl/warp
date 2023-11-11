@@ -10,7 +10,7 @@ func command(cmd string, agrs ...interface{}) (string, error) {
 
 	out, err := exec.Command("sh", "-c", str).Output()
 	if err != nil {
-		return "", fmt.Errorf("%s: %e", cmd, err)
+		return "", fmt.Errorf("%s: %s", str, err.Error())
 	}
 
 	return string(out), nil

@@ -24,6 +24,7 @@ type Config struct {
 	Tunnel string
 	IP     string
 	Domain string
+	K8S    string
 }
 
 type LogWriter struct{}
@@ -70,7 +71,7 @@ func (t *TUI) CreateTUI() error {
 func (t *TUI) layout(g *gocui.Gui) error {
 	maxX, maxY := g.Size()
 
-	if v, err := g.SetView("config", 0, maxY-6, maxX-21, maxY-1); err != nil {
+	if v, err := g.SetView("config", 0, maxY-7, maxX-21, maxY-1); err != nil {
 		if err != gocui.ErrUnknownView {
 			return err
 		}
@@ -78,6 +79,7 @@ func (t *TUI) layout(g *gocui.Gui) error {
 
 		g.Update(func(g *gocui.Gui) error {
 			fmt.Fprintf(v, "SSH:     %s\n", t.config.SSH)
+			fmt.Fprintf(v, "K8S:     %s\n", t.config.K8S)
 			fmt.Fprintf(v, "Tunnel:  %s\n", t.config.Tunnel)
 			fmt.Fprintf(v, "Gateway: %s\n", t.config.IP)
 			fmt.Fprintf(v, "Domain:  %s\n", t.config.Domain)
@@ -86,7 +88,7 @@ func (t *TUI) layout(g *gocui.Gui) error {
 		})
 	}
 
-	if v, err := g.SetView("logs", 0, 0, maxX-21, maxY-7); err != nil {
+	if v, err := g.SetView("logs", 0, 0, maxX-21, maxY-8); err != nil {
 		if err != gocui.ErrUnknownView {
 			return err
 		}

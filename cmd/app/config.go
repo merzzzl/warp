@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"net"
 	"strings"
 	"syscall"
 
@@ -13,13 +14,15 @@ import (
 )
 
 type Config struct {
-	tunelIP   string
-	tunelName string
-	dnsDomain string
-	ssh       *ssh.ClientConfig
-	sshHost   string
-	sshString string
-	tui       *tui.Config
+	tunelIP       string
+	tunelName     string
+	dnsDomain     string
+	ssh           *ssh.ClientConfig
+	sshHost       string
+	tui           *tui.Config
+	kubeConfig    string
+	kubeNamespace string
+	localNet      net.IP
 }
 
 func loadConfig() *Config {
@@ -28,12 +31,18 @@ func loadConfig() *Config {
 	var ip string
 	var domain string
 	var termui bool
+	var namespace string
+	var config string
+	var lo0 string
 
-	flag.StringVar(&sshs, "ssh", "root@127.0.0.1", "ssh host")
-	flag.StringVar(&tun, "tun", "utun5", "utun name")
-	flag.StringVar(&ip, "ip", "192.168.48.1", "utun name")
-	flag.StringVar(&domain, "domain", ".", "cdomain sufix")
-	flag.BoolVar(&termui, "tui", false, "enable tui mode")
+	flag.StringVar(&sshs, "s", "root@127.0.0.1", "ssh host")
+	flag.StringVar(&tun, "t", "utun5", "utun name")
+	flag.StringVar(&ip, "i", "192.168.48.1", "utun name")
+	flag.StringVar(&domain, "d", ".", "cdomain sufix")
+	flag.StringVar(&namespace, "n", "default", "kube namespace")
+	flag.StringVar(&config, "k", "", "path to kube config")
+	flag.StringVar(&lo0, "l", "127.0.40.0", "ip for local network in 24 mask")
+	flag.BoolVar(&termui, "u", false, "enable tui mode")
 
 	flag.Parse()
 
@@ -66,16 +75,21 @@ func loadConfig() *Config {
 		Tunnel: tun,
 		IP:     ip,
 		Domain: domain,
+		K8S:    namespace,
 	}
 
 	cfg := &Config{}
 
+	lo0ip := net.ParseIP(lo0)
+
 	cfg.ssh = &sshConfig
 	cfg.sshHost = host
-	cfg.sshString = sshs
 	cfg.dnsDomain = domain
-	cfg.tunelIP = ip
 	cfg.tunelName = tun
+	cfg.tunelIP = ip
+	cfg.kubeConfig = config
+	cfg.kubeNamespace = namespace
+	cfg.localNet = lo0ip
 
 	if termui {
 		cfg.tui = &tuiCfg

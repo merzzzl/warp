@@ -5,18 +5,24 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"runtime"
 	"syscall"
 
 	"github.com/merzzzl/warp/internal/dns"
+	"github.com/merzzzl/warp/internal/kube"
 	"github.com/merzzzl/warp/internal/log"
 	"github.com/merzzzl/warp/internal/routes"
 	"github.com/merzzzl/warp/internal/tarification"
 	"github.com/merzzzl/warp/internal/tui"
 	"github.com/merzzzl/warp/internal/warp"
 	"golang.org/x/crypto/ssh"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/tools/clientcmd"
 )
 
 func main() {
+	runtime.GOMAXPROCS(2)
+
 	ctx, cancel := context.WithCancel(context.Background())
 	cfg := loadConfig()
 
@@ -30,9 +36,24 @@ func main() {
 		log.Fatal().Err(err).Msg("APP", "failed to create WARP")
 	}
 
-	routes := routes.NewRoutes(wrp.GetTUN())
+	var k8sClient *kube.KubeRoute
+	if cfg.kubeConfig != "" {
+		restcfg, err := clientcmd.BuildConfigFromFlags("", cfg.kubeConfig)
+		if err != nil {
+			log.Fatal().Err(err).Msg("APP", "failed to load kube config")
+		}
+
+		clientset, err := kubernetes.NewForConfig(restcfg)
+		if err != nil {
+			log.Fatal().Err(err).Msg("APP", "failed to create kube client")
+		}
+
+		k8sClient = kube.NewKubeRoute(restcfg, clientset, cfg.kubeNamespace, cfg.localNet)
+	}
+
+	routes := routes.NewRoutes(wrp.GetTUN(), k8sClient)
 	meter := tarification.NewDataMeter()
-	ns := dns.NewDNS(sshClient, routes, cfg.dnsDomain)
+	ns := dns.NewDNS(sshClient, k8sClient, routes, cfg.dnsDomain)
 
 	go meter.Run(ctx)
 
@@ -51,7 +72,11 @@ func main() {
 		}
 	}()
 
-	if err := wrp.TunStart(ctx, sshClient, meter, ns); err != nil {
+	defer func() {
+		_ = ns.Restore()
+	}()
+
+	if err := wrp.Start(ctx, sshClient, meter, ns); err != nil {
 		log.Fatal().Err(err).Msg("APP", "failed to run Tunnel service")
 	}
 }

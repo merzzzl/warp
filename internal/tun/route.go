@@ -6,6 +6,14 @@ import (
 	"strings"
 )
 
+func AddLoAlias(ip string) error {
+	if _, err := command("ifconfig lo0 alias %s/32", ip); err != nil {
+		return fmt.Errorf("failed to add alias: %e", err)
+	}
+
+	return nil
+}
+
 func addRoute(destination, gateway string) error {
 	destination = strings.TrimSpace(destination)
 	if _, err := command("route add -net %s %s", destination, gateway); err != nil {
@@ -27,12 +35,20 @@ func getRoutes(gateway string) ([]string, error) {
 	}
 
 	routes := strings.Split(output, "\n")
+	for i, route := range routes {
+		routes[i] = strings.TrimSuffix(route, "/32")
+	}
+
 	return routes, nil
 }
 
 func setTunAddress(name string, addr string, mtu uint32) error {
-	ip, _, _ := net.ParseCIDR(addr)
-	if _, err := command("ifconfig %s inet %s %s mtu %d up", name, addr, ip.String(), mtu); err != nil {
+	ip, _, err := net.ParseCIDR(addr)
+	if err != nil {
+		return err
+	}
+
+	if _, err := command("ifconfig %s inet %s %s mtu %d up", name, ip.String(), ip.String(), mtu); err != nil {
 		return fmt.Errorf("failed to set addr: %e", err)
 	}
 

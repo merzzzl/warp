@@ -14,20 +14,20 @@ import (
 )
 
 type Service struct {
-	hand *sshHandler
+	hand *handler
 	tun  *tun.Tunnel
 }
 
-type sshHandler struct {
+type handler struct {
 	client *ssh.Client
 	dns    *dns.DNS
 	meter  *tarification.DataMeter
 }
 
 func NewService(tunName string, tunAddr string) (*Service, error) {
-	hand := &sshHandler{}
+	h := &handler{}
 
-	tn, err := tun.CreateTUN(tunName, tunAddr, tun.DefaultMTU, hand)
+	tn, err := tun.CreateTUN(tunName, tunAddr, tun.DefaultMTU, h)
 	if err != nil {
 		return nil, err
 	}
@@ -36,7 +36,7 @@ func NewService(tunName string, tunAddr string) (*Service, error) {
 
 	return &Service{
 		tun:  tn,
-		hand: hand,
+		hand: h,
 	}, nil
 }
 
@@ -44,29 +44,33 @@ func (s *Service) GetTUN() *tun.Tunnel {
 	return s.tun
 }
 
-func (s *Service) TunStart(ctx context.Context, client *ssh.Client, meter *tarification.DataMeter, dns *dns.DNS) error {
+func (s *Service) Start(ctx context.Context, client *ssh.Client, meter *tarification.DataMeter, ns *dns.DNS) error {
 	defer log.Info().Str("name", s.tun.GetName()).Msg("WRP", "unregister")
 	defer s.tun.Close()
 
 	s.hand.client = client
-	s.hand.dns = dns
+	s.hand.dns = ns
 	s.hand.meter = meter
 
-	if err := s.hand.dns.Apply(s.tun.GetAddr()); err != nil {
+	if err := ns.ApplySSH(s.tun.GetAddr()); err != nil {
 		return err
 	}
-	defer s.hand.dns.Restore()
+
+	if err := ns.ApplyK8S(ctx); err != nil {
+		return err
+	}
 
 	<-ctx.Done()
+
 	return nil
 }
 
-func (h *sshHandler) HandleTCP(conn tun.TCPConn) {
-	log.Info().Str("dest", conn.LocalAddr().String()).Msg("TUN", "handle conn")
+func (h *handler) HandleTCP(conn tun.TCPConn) {
+	log.Info().Str("dest", conn.LocalAddr().String()).Str("type", "TCP").Msg("WRP", "handle conn")
 
 	remoteConn, err := h.client.Dial(conn.LocalAddr().Network(), conn.LocalAddr().String())
 	if err != nil {
-		log.Error().Err(err).Msg("TUN", "failed to connect to remote host")
+		log.Error().Err(err).Msg("WRP", "failed to connect to remote host")
 		return
 	}
 
@@ -96,8 +100,13 @@ func (h *sshHandler) HandleTCP(conn tun.TCPConn) {
 	wg.Wait()
 }
 
-func (h *sshHandler) HandleUDP(conn tun.UDPConn) {
+func (h *handler) HandleUDP(conn tun.UDPConn) {
 	if strings.HasSuffix(conn.LocalAddr().String(), ":53") {
 		h.dns.Handle(conn)
+
+		return
 	}
+
+	log.Info().Str("dest", conn.LocalAddr().String()).Str("type", "UDP").Msg("WRP", "handle conn")
+	log.Error().Str("dest", conn.LocalAddr().String()).Str("type", "UDP").Msg("WRP", "not supported")
 }
