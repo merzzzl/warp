@@ -1,6 +1,7 @@
 package tun
 
 import (
+	"github.com/merzzzl/warp/internal/sys/iface"
 	"github.com/xjasonlyu/tun2socks/v2/core"
 	"github.com/xjasonlyu/tun2socks/v2/core/device"
 	"github.com/xjasonlyu/tun2socks/v2/core/device/tun"
@@ -16,10 +17,10 @@ type Tunnel struct {
 	trans  *tunTransportHandler
 }
 
-var DefaultMTU uint32 = 1480
+var defaultMTU uint32 = 1480
 
-func CreateTUN(name string, addr string, mtu uint32, hand ConnHandler) (*Tunnel, error) {
-	dev, err := tun.Open(name, mtu)
+func CreateTUN(name string, addr string, hand ConnHandler) (*Tunnel, error) {
+	dev, err := tun.Open(name, defaultMTU)
 	if err != nil {
 		return nil, err
 	}
@@ -36,7 +37,7 @@ func CreateTUN(name string, addr string, mtu uint32, hand ConnHandler) (*Tunnel,
 		return nil, err
 	}
 
-	err = setTunAddress(name, addr+"/32", mtu)
+	err = iface.CreateTun(name, addr, defaultMTU)
 	if err != nil {
 		return nil, err
 	}
@@ -60,16 +61,9 @@ func (t *Tunnel) GetAddr() string {
 	return t.addr
 }
 
-func (t *Tunnel) AddTunRoute(addr string) error {
-	return addRoute(addr, t.addr)
-}
-
-func (t *Tunnel) GetTunRoutes() ([]string, error) {
-	return getRoutes(t.addr)
-}
-
 func (t *Tunnel) Close() {
 	t.trans.finish()
 	t.stack.Close()
 	t.device.Close()
+	iface.DeleteTun(t.name)
 }

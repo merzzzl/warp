@@ -1,47 +1,83 @@
 package routes
 
 import (
-	"github.com/merzzzl/warp/internal/kube"
+	"math/rand"
+	"net"
+	"sync"
+
 	"github.com/merzzzl/warp/internal/log"
-	"github.com/merzzzl/warp/internal/tun"
+	"github.com/merzzzl/warp/internal/sys/iface"
 )
 
-type Routes struct {
-	kube   *kube.KubeRoute
-	tun    *tun.Tunnel
-	routes []string
+var (
+	routes    map[string]struct{} = make(map[string]struct{})
+	mutex     sync.Mutex
+	ifaceName string = "lo0"
+	subnet    net.IP
+)
+
+func SetSubnet(ip net.IP) {
+	subnet = ip
 }
 
-func NewRoutes(tun *tun.Tunnel, kube *kube.KubeRoute) *Routes {
-	return &Routes{
-		tun: tun,
-		kube: kube,
+func GetAll() []string {
+	mutex.Lock()
+	defer mutex.Unlock()
+
+	var list []string
+	for route := range routes {
+		list = append(list, route)
+	}
+
+	return list
+}
+
+func Free() error {
+	mutex.Lock()
+	defer mutex.Unlock()
+
+	for route := range routes {
+		log.Info().Str("ip", route).Msg("ROT", "remove route")
+
+		if err := iface.DeleteAlias(ifaceName, route); err != nil {
+			return err
+		}
+
+		delete(routes, route)
+	}
+
+	return nil
+}
+
+func GetFreeHost() (net.IP, error) {
+	mutex.Lock()
+	defer mutex.Unlock()
+
+	for {
+		ip := net.IPv4(subnet[12], subnet[13], subnet[14], byte(rand.Intn(255)))
+		if _, ok := routes[ip.String()]; !ok {
+			log.Info().Str("ip", ip.String()).Msg("ROT", "add route")
+
+			if err := iface.AddAlias(ifaceName, ip.String()); err != nil {
+				return nil, err
+			}
+
+			routes[ip.String()] = struct{}{}
+
+			return ip, nil
+		}
 	}
 }
 
-func (s *Routes) Add(ip string) {
+func ApplyRoute(ip string, gw string) error {
+	mutex.Lock()
+	defer mutex.Unlock()
+
 	log.Info().Str("ip", ip).Msg("ROT", "add route")
 
-	if err := s.tun.AddTunRoute(ip); err != nil {
-		log.Error().Err(err).Str("ip", ip).Msg("ROT", "fail on create route")
-		return
+	if err := iface.AddRoute(ip, gw); err != nil {
+		return err
 	}
 
-	routes, err := s.tun.GetTunRoutes()
-	if err != nil {
-		log.Error().Err(err).Str("ip", ip).Msg("ROT", "fail on update routes")
-		return
-	}
-
-	s.routes = routes
-}
-
-func (s *Routes) GetAll() []string {
-	if s.kube == nil {
-		return s.routes
-	}
-
-	routes := append(s.routes, s.kube.GetIPs()...)
-
-	return routes
+	return nil
 }

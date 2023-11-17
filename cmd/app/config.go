@@ -2,94 +2,74 @@ package main
 
 import (
 	"flag"
-	"fmt"
-	"net"
 	"strings"
-	"syscall"
 
 	"github.com/merzzzl/warp/internal/log"
 	"github.com/merzzzl/warp/internal/tui"
-	"golang.org/x/crypto/ssh"
-	"golang.org/x/term"
 )
 
 type Config struct {
-	tunelIP       string
-	tunelName     string
 	dnsDomain     string
-	ssh           *ssh.ClientConfig
+	sshUser       string
 	sshHost       string
 	tui           *tui.Config
 	kubeConfig    string
 	kubeNamespace string
-	localNet      net.IP
+	localNet      string
+	tunName       string
+	tunAddr       string
 }
 
 func loadConfig() *Config {
 	var sshs string
-	var tun string
-	var ip string
 	var domain string
 	var termui bool
 	var namespace string
 	var config string
 	var lo0 string
+	var tun string
+	var tunAddr string
 
-	flag.StringVar(&sshs, "s", "root@127.0.0.1", "ssh host")
-	flag.StringVar(&tun, "t", "utun5", "utun name")
-	flag.StringVar(&ip, "i", "192.168.48.1", "utun name")
+	flag.StringVar(&sshs, "s", "", "ssh host")
 	flag.StringVar(&domain, "d", ".", "cdomain sufix")
 	flag.StringVar(&namespace, "n", "default", "kube namespace")
 	flag.StringVar(&config, "k", "", "path to kube config")
-	flag.StringVar(&lo0, "l", "127.0.40.0", "ip for local network in 24 mask")
+	flag.StringVar(&lo0, "l", "127.192.168.0", "ip for local network in 24 mask")
+	flag.StringVar(&tun, "t", "utun7", "tun interface name")
+	flag.StringVar(&tunAddr, "a", "192.168.127.0", "tun interface address")
 	flag.BoolVar(&termui, "u", false, "enable tui mode")
 
 	flag.Parse()
 
-	sshVars := strings.Split(sshs, "@")
-	if len(sshVars) != 2 {
-		log.Fatal().Msg("APP", "incorrect ssh")
-	}
+	cfg := &Config{}
 
-	user := sshVars[0]
-	host := sshVars[1]
+	if sshs != "" {
+		sshVars := strings.Split(sshs, "@")
+		if len(sshVars) != 2 {
+			log.Fatal().Msg("APP", "incorrect ssh")
+		}
 
-	sshConfig := ssh.ClientConfig{
-		User: user,
-		Auth: []ssh.AuthMethod{
-			ssh.PasswordCallback(func() (secret string, err error) {
-				fmt.Print("SSH Password:")
-				passwordBytes, err := term.ReadPassword(int(syscall.Stdin))
-				if err != nil {
-					return "", err
-				}
-				fmt.Print("\r")
-				return string(passwordBytes), nil
-			}),
-		},
-		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+		cfg.sshUser = sshVars[0]
+		cfg.sshHost = sshVars[1]
 	}
 
 	tuiCfg := tui.Config{
-		SSH:    sshs,
-		Tunnel: tun,
-		IP:     ip,
-		Domain: domain,
-		K8S:    namespace,
+		SSH:     sshs,
+		Domain:  domain,
+		TunIP:   tunAddr,
+		TunName: tun,
+
+		K8SEnable: config != "",
+		K8S:       namespace,
+		LocalIP:   lo0,
 	}
 
-	cfg := &Config{}
-
-	lo0ip := net.ParseIP(lo0)
-
-	cfg.ssh = &sshConfig
-	cfg.sshHost = host
 	cfg.dnsDomain = domain
-	cfg.tunelName = tun
-	cfg.tunelIP = ip
 	cfg.kubeConfig = config
 	cfg.kubeNamespace = namespace
-	cfg.localNet = lo0ip
+	cfg.localNet = lo0
+	cfg.tunName = tun
+	cfg.tunAddr = tunAddr
 
 	if termui {
 		cfg.tui = &tuiCfg

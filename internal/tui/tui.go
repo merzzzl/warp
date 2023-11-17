@@ -14,17 +14,18 @@ import (
 
 type TUI struct {
 	logs   <-chan string
-	meter  *tarification.DataMeter
-	routes *routes.Routes
 	config *Config
 }
 
 type Config struct {
-	SSH    string
-	Tunnel string
-	IP     string
-	Domain string
-	K8S    string
+	SSH     string
+	TunIP   string
+	TunName string
+	Domain  string
+
+	K8SEnable bool
+	K8S       string
+	LocalIP   string
 }
 
 type LogWriter struct{}
@@ -36,11 +37,9 @@ func (cw LogWriter) Write(p []byte) (n int, err error) {
 	return len(p), nil
 }
 
-func NewTUI(meter *tarification.DataMeter, routes *routes.Routes, config *Config) *TUI {
+func NewTUI(config *Config) *TUI {
 	return &TUI{
 		logs:   logChannel,
-		meter:  meter,
-		routes: routes,
 		config: config,
 	}
 }
@@ -71,24 +70,30 @@ func (t *TUI) CreateTUI() error {
 func (t *TUI) layout(g *gocui.Gui) error {
 	maxX, maxY := g.Size()
 
-	if v, err := g.SetView("config", 0, maxY-7, maxX-21, maxY-1); err != nil {
+	configSize := 2
+	if t.config.SSH != "" {
+		configSize += 2
+	}
+	if t.config.K8SEnable {
+		configSize += 1
+	}
+
+	if v, err := g.SetView("config", 0, maxY-configSize, maxX-21, maxY-1); err != nil {
 		if err != gocui.ErrUnknownView {
 			return err
 		}
 		v.Title = "Config"
 
 		g.Update(func(g *gocui.Gui) error {
-			fmt.Fprintf(v, "SSH:     %s\n", t.config.SSH)
-			fmt.Fprintf(v, "K8S:     %s\n", t.config.K8S)
-			fmt.Fprintf(v, "Tunnel:  %s\n", t.config.Tunnel)
-			fmt.Fprintf(v, "Gateway: %s\n", t.config.IP)
-			fmt.Fprintf(v, "Domain:  %s\n", t.config.Domain)
+			fmt.Fprintf(v, "SSH: %s (*%s)\n", t.config.SSH, t.config.Domain)
+			fmt.Fprintf(v, "TUN: %s (%s)\n", t.config.TunName, t.config.TunIP)
+			fmt.Fprintf(v, "K8S: %s (%s)\n", t.config.K8S, t.config.LocalIP)
 
 			return nil
 		})
 	}
 
-	if v, err := g.SetView("logs", 0, 0, maxX-21, maxY-8); err != nil {
+	if v, err := g.SetView("logs", 0, 0, maxX-21, maxY-1-configSize); err != nil {
 		if err != gocui.ErrUnknownView {
 			return err
 		}
@@ -122,7 +127,7 @@ func (t *TUI) layout(g *gocui.Gui) error {
 			for range time.NewTicker(time.Second * 1).C {
 				g.Update(func(g *gocui.Gui) error {
 					v.Clear()
-					in, out := t.meter.GetRates()
+					in, out := tarification.GetRates()
 
 					fmt.Fprintf(v, "In:  %.2f\n", in/1024)
 					fmt.Fprintf(v, "Out: %.2f\n", out/1024)
@@ -143,7 +148,7 @@ func (t *TUI) layout(g *gocui.Gui) error {
 			for range time.NewTicker(time.Second * 1).C {
 				g.Update(func(g *gocui.Gui) error {
 					v.Clear()
-					ips := t.routes.GetAll()
+					ips := routes.GetAll()
 					sort.Strings(ips)
 					for _, ip := range ips {
 						fmt.Fprintln(v, ip)

@@ -3,21 +3,26 @@ package kube
 import (
 	"context"
 	"fmt"
-	"math/rand"
 	"net"
 	"net/http"
 	"strings"
 	"sync"
 
 	"github.com/merzzzl/warp/internal/log"
-	"github.com/merzzzl/warp/internal/tun"
+	"github.com/merzzzl/warp/internal/routes"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	_ "k8s.io/client-go/plugin/pkg/client/auth/oidc"
 	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/client-go/tools/portforward"
 	"k8s.io/client-go/transport/spdy"
 )
+
+type Config struct {
+	KubeConfigPath string
+	KubeNamespace  string
+}
 
 type KubeRoute struct {
 	ctx       context.Context
@@ -27,8 +32,6 @@ type KubeRoute struct {
 	domains   []string
 	mutex     sync.Mutex
 	usedIPs   map[string]net.IP
-	ipList    map[string]struct{}
-	localNet  net.IP
 }
 
 type k8sLog struct {
@@ -41,46 +44,46 @@ func (l *k8sLog) Write(bts []byte) (n int, err error) {
 	return len(bts), nil
 }
 
-func NewKubeRoute(cfg *rest.Config, cli *kubernetes.Clientset, namespace string, lo0 net.IP) *KubeRoute {
-	return &KubeRoute{
-		ctx:       context.Background(),
-		cfg:       cfg,
-		cli:       cli,
-		namespace: namespace,
-		domains:   make([]string, 0),
-		usedIPs:   make(map[string]net.IP),
-		ipList:    make(map[string]struct{}),
-		localNet:  lo0,
-	}
-}
-
-func (k *KubeRoute) SetContext(ctx context.Context) {
-	k.ctx = ctx
-}
-
-func (k *KubeRoute) LoadDomains(ctx context.Context) error {
-	svcs, err := k.cli.CoreV1().Services(k.namespace).List(ctx, metav1.ListOptions{})
+func NewKubeRoute(ctx context.Context, cfg *Config) (*KubeRoute, error) {
+	restcfg, err := clientcmd.BuildConfigFromFlags("", cfg.KubeConfigPath)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	for _, svc := range svcs.Items {
-		k.domains = append(k.domains, svc.Name+".")
-		k.domains = append(k.domains, fmt.Sprintf("%s.%s.svc.cluster.local.", svc.Name, svc.Namespace))
+	clientset, err := kubernetes.NewForConfig(restcfg)
+	if err != nil {
+		return nil, err
 	}
 
-	log.Info().Str("namespace", k.namespace).Msgf("K8S", "load %d domain names", len(svcs.Items))
-
-	return nil
+	return &KubeRoute{
+		ctx:       ctx,
+		cfg:       restcfg,
+		cli:       clientset,
+		namespace: cfg.KubeNamespace,
+		usedIPs:   make(map[string]net.IP),
+	}, nil
 }
 
-func (k *KubeRoute) GetDNS(serviceName string) (net.IP, error) {
+func (k *KubeRoute) GetDNS(serviceName string) (net.IP, bool, error) {
 	serviceName = strings.TrimSuffix(serviceName, fmt.Sprintf("%s.svc.cluster.local.", k.namespace))
 	serviceName = strings.TrimSuffix(serviceName, ".")
 
+	if !k.isKubeDomain(serviceName) {
+		return nil, false, nil
+	}
+
+	hostIP, isNew, err := k.getFreeHost(serviceName)
+	if err != nil {
+		return nil, true, err
+	}
+
+	if !isNew {
+		return hostIP, true, nil
+	}
+
 	service, err := k.cli.CoreV1().Services(k.namespace).Get(context.TODO(), serviceName, metav1.GetOptions{})
 	if err != nil {
-		return nil, err
+		return nil, true, err
 	}
 
 	var labelSelector string
@@ -93,12 +96,12 @@ func (k *KubeRoute) GetDNS(serviceName string) (net.IP, error) {
 
 	pods, err := k.cli.CoreV1().Pods(k.namespace).List(context.Background(), metav1.ListOptions{LabelSelector: labelSelector})
 	if err != nil {
-		return nil, err
+		return nil, true, err
 	}
 
 	transport, upgrader, err := spdy.RoundTripperFor(k.cfg)
 	if err != nil {
-		return nil, err
+		return nil, true, err
 	}
 
 	ports := []string{}
@@ -117,18 +120,9 @@ func (k *KubeRoute) GetDNS(serviceName string) (net.IP, error) {
 	stopChan := make(chan struct{}, 1)
 	readyChan := make(chan struct{}, 1)
 
-	hostIP, isNew := k.getFreeHost(serviceName)
-	if !isNew {
-		return hostIP, nil
-	}
-
 	portForwarder, err := portforward.NewOnAddresses(dialer, []string{hostIP.String()}, ports, stopChan, readyChan, &k8sLog{event: log.Info}, &k8sLog{event: log.Error})
 	if err != nil {
-		return nil, err
-	}
-
-	if err := tun.AddLoAlias(hostIP.String()); err != nil {
-		return nil, err
+		return nil, true, err
 	}
 
 	go func() {
@@ -148,10 +142,25 @@ func (k *KubeRoute) GetDNS(serviceName string) (net.IP, error) {
 		log.Info().Str("service", serviceName).Str("host", hostIP.String()).Msg("K8S", "port forwarding is stoped")
 	}()
 
-	return hostIP, nil
+	return hostIP, true, nil
 }
 
-func (k *KubeRoute) IsKubeDomain(host string) bool {
+func (k *KubeRoute) isKubeDomain(host string) bool {
+	if k.domains == nil {
+		k.mutex.Lock()
+		defer k.mutex.Unlock()
+
+		svcs, err := k.cli.CoreV1().Services(k.namespace).List(k.ctx, metav1.ListOptions{})
+		if err != nil {
+			log.Error().Err(err).Msg("K8S", "failed to get services")
+		}
+
+		k.domains = []string{}
+		for _, svc := range svcs.Items {
+			k.domains = append(k.domains, svc.Name)
+		}
+	}
+
 	for _, d := range k.domains {
 		if d == host {
 			return true
@@ -161,34 +170,20 @@ func (k *KubeRoute) IsKubeDomain(host string) bool {
 	return false
 }
 
-func (k *KubeRoute) getFreeHost(name string) (net.IP, bool) {
+func (k *KubeRoute) getFreeHost(name string) (net.IP, bool, error) {
 	k.mutex.Lock()
 	defer k.mutex.Unlock()
 
 	if ip, ok := k.usedIPs[name]; ok {
-		return ip, false
+		return ip, false, nil
 	}
 
-	for {
-		ip := net.IPv4(k.localNet[12], k.localNet[13], k.localNet[14], byte(rand.Intn(255)))
-		if _, ok := k.ipList[ip.String()]; !ok {
-			k.ipList[ip.String()] = struct{}{}
-			k.usedIPs[name] = ip
-
-			return ip, true
-		}
-	}
-}
-
-func (k *KubeRoute) GetIPs() []string {
-	k.mutex.Lock()
-	defer k.mutex.Unlock()
-
-	var ips []string
-
-	for ip, _ := range k.ipList {
-		ips = append(ips, ip)
+	free, err := routes.GetFreeHost()
+	if err != nil {
+		return nil, true, err
 	}
 
-	return ips
+	k.usedIPs[name] = free
+
+	return free, true, nil
 }

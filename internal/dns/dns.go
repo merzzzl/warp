@@ -3,221 +3,142 @@ package dns
 import (
 	"context"
 	"net"
-	"strings"
 
-	"github.com/merzzzl/warp/internal/kube"
 	"github.com/merzzzl/warp/internal/log"
 	"github.com/merzzzl/warp/internal/routes"
-	"github.com/merzzzl/warp/internal/tun"
+	"github.com/merzzzl/warp/internal/sys"
+	"github.com/merzzzl/warp/internal/sys/resolv"
 	"github.com/miekg/dns"
-	"golang.org/x/crypto/ssh"
 )
 
 type DNS struct {
-	clientSSH   *ssh.Client
-	clientKube  *kube.KubeRoute
-	routes      *routes.Routes
-	originalDNS string
-	sshDNS      string
-	Restore     func() error
-	domain      string
+	getters []DNSGetter
+	server  *dns.Server
+	host    net.IP
 }
 
-func NewDNS(clientSSH *ssh.Client, clientKube *kube.KubeRoute, route *routes.Routes, domain string) *DNS {
-	return &DNS{
-		clientSSH:  clientSSH,
-		clientKube: clientKube,
-		routes:     route,
-		domain:     domain,
-	}
-}
+type DNSGetter func(host string) (net.IP, bool, error)
 
-func (s *DNS) ApplyK8S(ctx context.Context) error {
-	s.clientKube.SetContext(ctx)
+func NewDNS(getter ...DNSGetter) (*DNS, error) {
+	ns := &DNS{}
 
-	if err := s.clientKube.LoadDomains(ctx); err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func (s *DNS) ApplySSH(ip string) error {
-	name, err := tun.DefaultRouteInterface()
-	if err != nil {
-		return err
-	}
-
-	rlv, err := tun.NewHandler(name)
-	if err != nil {
-		return err
-	}
-
-	if err := rlv.Set([]string{ip}); err != nil {
-		return err
-	}
-
-	originalDNSs, err := rlv.OriginalDNS()
-	if err != nil {
-		return err
-	}
-
-	if len(originalDNSs) > 0 {
-		s.originalDNS = originalDNSs[0]
-	}
-
-	s.Restore = rlv.Restore
-
-	session, err := s.clientSSH.NewSession()
-	if err != nil {
-		return err
-	}
-
-	sshDNS, err := session.CombinedOutput("scutil --dns | grep \"nameserver\\[.\\]\" | awk '{print $3}' | head -n 1")
-	if err != nil {
-		return err
-	}
-
-	if len(sshDNS) != 0 {
-		s.sshDNS = strings.TrimSpace(string(sshDNS))
-		s.routes.Add(s.sshDNS)
-	}
-
-	return nil
-}
-
-func (s *DNS) Handle(conn net.PacketConn) {
-	for {
-		buffer := make([]byte, 512)
-		_, addr, err := conn.ReadFrom(buffer)
+	dns.HandleFunc(".", func(w dns.ResponseWriter, r *dns.Msg) {
+		rsp, err := ns.serveDNS(r)
 		if err != nil {
+			log.Error().Err(err).Msg("DNS", "failed to handle dns request")
+			w.WriteMsg(r)
 			return
 		}
 
-		req := new(dns.Msg)
-		err = req.Unpack(buffer)
-		if err != nil {
-			log.Error().Err(err).Msg("DNS", "failed to unpack message")
+		if err := w.WriteMsg(rsp); err != nil {
+			log.Error().Err(err).Msg("DNS", "failed to write dns response")
+			w.WriteMsg(r)
 			return
 		}
+	})
 
-		out, err := s.serveDNS(req)
-		if err != nil {
-			log.Error().Err(err).Msg("DNS", "failed to resolve dns")
-			return
-		}
-
-		_, err = conn.WriteTo(out, addr)
-		if err != nil {
-			return
-		}
-	}
-}
-
-func (s *DNS) serveDNS(r *dns.Msg) (msg []byte, err error) {
-	if s.reqContainsSSHDomain(r) && s.sshDNS != "" {
-		m, err := s.fetchSSHDNSRecords(r)
-		if err != nil {
-			return nil, err
-		}
-
-		return m.Pack()
-	}
-
-	if s.clientKube != nil && s.reqContainsK8SDomain(r) && s.clientKube != nil {
-		m, err := s.fetchK8SDNSRecords(r)
-		if err != nil {
-			return nil, err
-		}
-
-		return m.Pack()
-	}
-
-	m, err := s.fetchLocalDNSRecords(r)
-	if err != nil {
-		return nil, nil
-	}
-
-	return m.Pack()
-}
-
-func (s *DNS) fetchSSHDNSRecords(r *dns.Msg) (*dns.Msg, error) {
-	for _, q := range r.Question {
-		log.Info().Str("cdomain", q.Name).Msg("DNS", "handle ssh dns")
-	}
-
-	c := new(dns.Client)
-	c.Net = "tcp"
-
-	response, _, err := c.Exchange(r, s.sshDNS+":53")
+	ip, err := routes.GetFreeHost()
 	if err != nil {
 		return nil, err
 	}
 
-	for _, ans := range response.Answer {
-		switch t := ans.(type) {
-		case *dns.A:
-			s.routes.Add(t.A.String())
-		default:
-			continue
+	ns.getters = getter
+	ns.server = &dns.Server{Addr: ip.String() + ":53", Net: "udp"}
+	ns.host = ip
+
+	return ns, nil
+}
+
+func (s *DNS) Start(ctx context.Context) error {
+	log.Info().Str("host", s.server.Addr).Msg("DNS", "start dns server")
+	defer log.Info().Str("host", s.server.Addr).Msg("DNS", "stop dns server")
+
+	if err := resolv.SetDNS([]string{s.host.String()}); err != nil {
+		log.Error().Err(err).Msg("DNS", "failed to set dns")
+	}
+
+	go func() {
+		<-ctx.Done()
+		s.server.Shutdown()
+	}()
+
+	for err := s.server.ListenAndServe(); err != nil; err = s.server.ListenAndServe() {
+		if opErr, ok := err.(*net.OpError); ok && opErr.Op == "listen" {
+			log.Error().Err(err).Msg("DNS", "attempt to release the port")
+
+			sys.Command("kill -9 $(sudo lsof -i udp:53 -t)")
+		} else {
+			return err
 		}
 	}
 
-	return response, nil
+	return nil
 }
 
-func (s *DNS) fetchK8SDNSRecords(r *dns.Msg) (*dns.Msg, error) {
-	response := new(dns.Msg)
-	response.SetReply(r)
+func (s *DNS) serveDNS(r *dns.Msg) (*dns.Msg, error) {
+	m, ok, err := s.fetchOverGetter(r)
+	if err != nil {
+		return nil, err
+	}
 
-	for _, q := range r.Question {
-		log.Info().Str("cdomain", q.Name).Msg("DNS", "handle k8s dns")
-
-		ipAddress, err := s.clientKube.GetDNS(q.Name)
+	if !ok {
+		m, err = s.fetchLocalDNSRecords(r)
 		if err != nil {
 			return nil, err
 		}
+	}
 
-		switch q.Qtype {
-		case dns.TypeA:
-			rr := &dns.A{
-				Hdr: dns.RR_Header{Name: q.Name, Rrtype: dns.TypeA, Class: dns.ClassINET, Ttl: 3600},
-				A:   ipAddress,
+	return m, nil
+}
+
+func (s *DNS) fetchOverGetter(r *dns.Msg) (*dns.Msg, bool, error) {
+	rsp := new(dns.Msg)
+	rsp.SetReply(r)
+
+	for _, q := range r.Question {
+		for _, getter := range s.getters {
+			ip, ok, err := getter(q.Name)
+			if !ok {
+				continue
 			}
-			response.Answer = append(response.Answer, rr)
+
+			log.Info().Str("cdomain", q.Name).Msg("DNS", "handle remote")
+
+			if err != nil {
+				return nil, true, err
+			}
+
+			if len(ip) == 0 {
+				continue
+			}
+
+			rsp.Answer = append(rsp.Answer, &dns.A{
+				Hdr: dns.RR_Header{
+					Name:   q.Name,
+					Rrtype: dns.TypeA,
+					Class:  dns.ClassINET,
+				},
+				A: ip,
+			})
+
+			log.Info().Str("cdomain", q.Name).Str("ip", ip.String()).Msg("DNS", "dns resolved")
 		}
 	}
 
-	return response, nil
+	return rsp, len(rsp.Answer) > 0, nil
 }
 
 func (s *DNS) fetchLocalDNSRecords(r *dns.Msg) (*dns.Msg, error) {
 	c := new(dns.Client)
 
-	response, _, err := c.Exchange(r, s.originalDNS+":53")
-	if err != nil {
-		return nil, err
-	}
-
-	return response, nil
-}
-
-func (s *DNS) reqContainsK8SDomain(r *dns.Msg) bool {
-	for _, q := range r.Question {
-		if s.clientKube.IsKubeDomain(q.Name) {
-			return true
+	for _, ns := range resolv.GetOriginalDNS() {
+		response, _, err := c.Exchange(r, ns+":53")
+		if err != nil {
+			continue
 		}
+
+		return response, nil
 	}
 
-	return false
-}
-
-func (s *DNS) reqContainsSSHDomain(r *dns.Msg) bool {
-	for _, q := range r.Question {
-		if strings.HasSuffix(q.Name, s.domain) {
-			return true
-		}
-	}
-
-	return false
+	return new(dns.Msg), nil
 }

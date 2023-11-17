@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-type DataMeter struct {
+type dataMeter struct {
 	// 1000 500 200 100 50 20 10 5 1 0.1
 	mutex          sync.RWMutex
 	transferredIn  atomic.Int64
@@ -17,23 +17,25 @@ type DataMeter struct {
 	inRate         float64
 }
 
+var m = newDataMeter()
+
 type TarificationConn struct {
-	dm   *DataMeter
+	dm   *dataMeter
 	conn net.Conn
 }
 
-func NewDataMeter() *DataMeter {
-	return new(DataMeter)
+func newDataMeter() *dataMeter {
+	return new(dataMeter)
 }
 
-func (m *DataMeter) GetRates() (float64, float64) {
+func GetRates() (float64, float64) {
 	m.mutex.RLock()
 	defer m.mutex.RUnlock()
 
 	return m.inRate, m.outRate
 }
 
-func (m *DataMeter) Run(ctx context.Context) {
+func Run(ctx context.Context) {
 	for ctx.Err() == nil {
 		time.Sleep(1 * time.Second)
 
@@ -47,7 +49,7 @@ func (m *DataMeter) Run(ctx context.Context) {
 	}
 }
 
-func (m *DataMeter) TarificationConn(conn net.Conn) *TarificationConn {
+func NewTarificationConn(conn net.Conn) *TarificationConn {
 	return &TarificationConn{
 		dm:   m,
 		conn: conn,
