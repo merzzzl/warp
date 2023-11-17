@@ -34,13 +34,13 @@ To run WARP, execute the following command with the appropriate options:
 
 Here are the updated command line options:
 
-- `-s`: Specifies the SSH host to connect to. Default is `root@127.0.0.1`.
-- `-t`: Specifies the name of the utun device. Default is `utun5`.
-- `-i`: Specifies the IP address for the utun device. Default is `192.168.48.1`.
+- `-s`: Specifies the SSH host to connect to.
+- `-t`: Specifies the name of the utun device. Default is `utun7`.
+- `-a`: Specifies the IP address for the utun device. Default is `192.168.127.0`.
 - `-d`: Specifies the domain suffix for routing. Default is `.`.
 - `-n`: Specifies the Kubernetes namespace. Default is `default`.
 - `-k`: Path to Kubernetes config file.
-- `-l`: IP for local network in 24 mask. Default is `127.0.40.0`.
+- `-l`: IP for local network in 24 mask. Default is `127.192.168.0`.
 - `-u`: Enables Text-based User Interface (TUI) mode. Disabled by default.
 
 ## Examples
@@ -48,7 +48,7 @@ Here are the updated command line options:
 Here's an updated example demonstrating how to forward TCP traffic through an SSH tunnel, including routing to a Kubernetes network:
 
 ```bash
-./warp -s root@127.0.0.1 -t utun5 -i 192.168.48.1 -d . -n default -k path/to/kubeconfig -l 127.0.40.0 -u
+./warp -s root@127.0.0.1 -t utun5 -a 192.168.48.1 -d . -n default -k path/to/kubeconfig -l 127.192.168.0 -u
 ```
 
 
