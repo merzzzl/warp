@@ -30,7 +30,7 @@ func GetAll() []string {
 		list = append(list, alias)
 	}
 
-	for route := range aliases {
+	for route := range routes {
 		list = append(list, route)
 	}
 
