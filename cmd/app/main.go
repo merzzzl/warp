@@ -3,95 +3,78 @@ package main
 import (
 	"context"
 	"fmt"
-	"net"
 	"os"
 	"os/signal"
 	"runtime"
 	"syscall"
 
-	"github.com/merzzzl/warp/internal/dns"
-	"github.com/merzzzl/warp/internal/log"
-	"github.com/merzzzl/warp/internal/protocols/kube"
-	"github.com/merzzzl/warp/internal/protocols/ssh"
-	"github.com/merzzzl/warp/internal/routes"
-	"github.com/merzzzl/warp/internal/sys/resolv"
-	"github.com/merzzzl/warp/internal/tarification"
-	"github.com/merzzzl/warp/internal/tui"
+	"github.com/merzzzl/warp/internal/protocol/local"
+	"github.com/merzzzl/warp/internal/protocol/ssh"
+	"github.com/merzzzl/warp/internal/service"
+	"github.com/merzzzl/warp/internal/utils/log"
+	"github.com/merzzzl/warp/internal/utils/tui"
 )
 
 func main() {
 	runtime.GOMAXPROCS(2)
 
 	ctx, cancel := context.WithCancel(context.Background())
-	cfg := loadConfig()
 
-	routes.SetSubnet(net.ParseIP(cfg.localNet))
-	defer func() {
-		if err := routes.Free(); err != nil {
-			log.Error().Err(err).Msg("APP", "failed to free host")
-		}
-		log.Info().Msg("APP", "hosts cleaned")
-	}()
+	cfg, err := loadConfig()
+	if err != nil {
+		log.Fatal().Err(err).Msg("APP", "failed on load config")
+	}
 
-	dnsG := []dns.DNSGetter{}
+	group := []service.Protocol{
+		local.New(),
+	}
 
-	if cfg.sshHost != "" {
-		sshR, err := ssh.NewSSHRoute(ctx, &ssh.Config{
-			SSHUser: cfg.sshUser,
-			SSHHost: cfg.sshHost,
-			Domain:  cfg.dnsDomain,
-			TunName: cfg.tunName,
-			TunAddr: cfg.tunAddr,
-		})
+	// Register SSH
+	if cfg.SSH != nil {
+		sshR, err := ssh.New(cfg.SSH)
 		if err != nil {
 			log.Fatal().Err(err).Msg("APP", "failed to create SSH route")
 		}
 
-		dnsG = append(dnsG, sshR.GetDNS)
+		group = append(group, sshR)
 	}
 
-	if cfg.kubeConfig != "" {
-		k8sR, err := kube.NewKubeRoute(ctx, &kube.Config{
-			KubeConfigPath: cfg.kubeConfig,
-			KubeNamespace:  cfg.kubeNamespace,
-		})
-		if err != nil {
-			log.Fatal().Err(err).Msg("APP", "failed to create Kube route")
-		}
+	// INFO: Add more protocols here
+	// protocol must implement:
+	//   LookupHost(ctx context.Context, req *dns.Msg) (*dns.Msg, error)
+	//   HandleTCP(conn net.Conn)
+	//   HandleUDP(conn net.Conn)
 
-		dnsG = append(dnsG, k8sR.GetDNS)
-	}
-
-	defer func() {
-		if err := resolv.Restore(); err != nil {
-			log.Error().Err(err).Msg("APP", "failed to restore resolv")
-		}
-		log.Info().Msg("APP", "dns restored")
-	}()
-
-	ns, err := dns.NewDNS(dnsG...)
+	srv, err := service.New(cfg.Tunnel)
 	if err != nil {
-		log.Fatal().Err(err).Msg("APP", "failed to create DNS")
+		log.Fatal().Err(err).Msg("APP", "failed create tunnel")
 	}
 
-	go tarification.Run(ctx)
+	defer srv.Close()
 
-	go func() {
-		defer cancel()
-		if cfg.tui != nil {
-			ui := tui.NewTUI(cfg.tui)
-			if err := ui.CreateTUI(); err != nil {
+	if !cfg.verbose {
+		go func() {
+			defer cancel()
+
+			if err := tui.CreateTUI(srv.GetRoutes(), srv.GetTraffic()); err != nil {
 				log.Error().Err(err).Msg("APP", "failed on create tui")
 			}
-		} else {
+		}()
+	} else {
+		go func() {
+			defer cancel()
+
 			c := make(chan os.Signal, 1)
 			signal.Notify(c, os.Interrupt, syscall.SIGTERM)
 			<-c
-			fmt.Print("\r")
-		}
-	}()
 
-	if err := ns.Start(ctx); err != nil {
+			if _, err := fmt.Print("\n"); err != nil {
+				return
+			}
+		}()
+	}
+
+	if err := srv.ListenAndServe(ctx, group); err != nil {
 		log.Error().Err(err).Msg("APP", "failed to start DNS")
 	}
 }

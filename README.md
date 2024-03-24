@@ -1,6 +1,6 @@
 # WARP
 
-WARP is a tool designed to forward TCP traffic through an SSH tunnel. It provides a secure and efficient way to route your network data, including support for routing traffic to Kubernetes networks.
+WARP is a tool designed to forward TCP traffic through an SSH tunnel. It provides a secure and efficient way to route your network data.
 
 ## Table of Contents
 
@@ -9,6 +9,7 @@ WARP is a tool designed to forward TCP traffic through an SSH tunnel. It provide
   - [Installation](#installation)
   - [Usage](#usage)
     - [Command Line Options](#command-line-options)
+    - [Configuration File Options](#configuration-file-options)
   - [Examples](#examples)
   - [License](#license)
 
@@ -24,33 +25,38 @@ make build
 
 ## Usage
 
-To run WARP, execute the following command with the appropriate options:
+To run WARP, create the `~/.warp.conf` file in the user home directory and run warp using the following command line options:
 
 ```bash
-./warp [options]
+sudo ./warp [options]
 ```
 
 ### Command Line Options
 
-Here are the updated command line options:
+- `-verbose`: Run WARP in console verbose logging mode. (dissable TUI mode)
 
-- `-s`: Specifies the SSH host to connect to.
-- `-t`: Specifies the name of the utun device. Default is `utun7`.
-- `-a`: Specifies the IP address for the utun device. Default is `192.168.127.0`.
-- `-d`: Specifies the domain suffix for routing. Default is `.`.
-- `-n`: Specifies the Kubernetes namespace. Default is `default`.
-- `-k`: Path to Kubernetes config file.
-- `-l`: IP for local network in 24 mask. Default is `127.192.168.0`.
-- `-u`: Enables Text-based User Interface (TUI) mode. Disabled by default.
+### Configuration File Options
+
+```yaml
+# WARP configuration file example
+---
+tunnel:
+  name: utun0
+  ip: 192.168.200.0
+ssh:
+ user: admin
+ password: p@ssw0rd
+ host: 192.168.1.100
+ domain: (.*\.)?example\.com$
+```
 
 ## Examples
 
 Here's an updated example demonstrating how to forward TCP traffic through an SSH tunnel, including routing to a Kubernetes network:
 
 ```bash
-./warp -s root@127.0.0.1 -t utun5 -a 192.168.48.1 -d . -n default -k path/to/kubeconfig -l 127.192.168.0 -u
+sudo ./warp
 ```
-
 
 ![WARP run with TUI mode](README.png)
 

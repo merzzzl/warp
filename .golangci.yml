@@ -1,0 +1,116 @@
+linters:
+  enable-all: true
+  disable:
+    - depguard
+    - lll
+    - gomnd
+    - exhaustivestruct
+    - varnamelen
+    - exhaustruct
+    - cyclop
+    - funlen
+    - tagliatelle
+    - gochecknoglobals
+    - wrapcheck
+    - gocognit
+    - gocyclo
+    - maintidx
+    - nonamedreturns
+    - scopelint
+    - interfacer
+    - nosnakecase
+    - structcheck
+    - ifshort
+    - golint
+    - deadcode
+    - varcheck
+    - maligned
+    - nestif
+    - goconst
+    - bodyclose
+    - forbidigo
+    - zerologlint
+    - ireturn
+linters-settings:
+  gosec:
+    confidence: high
+    severity: high
+    excludes:
+      - G404
+  gci:
+    local-prefixes: github.com/merzzzl
+  perfsprint:
+    strconcat: false
+  unused:
+    local-variables-are-used: false
+  nakedret:
+    max-func-lines: 0
+  govet:
+    enable-all: true
+    disable:
+      - shadow
+  gofmt:
+    rewrite-rules:
+      - pattern: "interface{}"
+        replacement: "any"
+      - pattern: "a[b:len(a)]"
+        replacement: "a[b:]"
+      - pattern: "a[0:b]"
+        replacement: "a[:b]"
+  errorlint:
+    asserts: false
+  revive:
+    enable-all-rules: true
+    rules:
+      - name: line-length-limit
+        disabled: true
+      - name: comment-spacings
+        disabled: true
+      - name: struct-tag
+        arguments:
+          - json,inline
+      - name: add-constant
+        disabled: true
+      - name: cognitive-complexity
+        disabled: true
+      - name: max-public-structs
+        disabled: true
+      - name: function-length
+        disabled: true
+      - name: cyclomatic
+        disabled: true
+      - name: confusing-results
+        disabled: true
+      - name: function-result-limit
+        disabled: true
+      - name: flag-parameter
+        disabled: true
+      - name: nested-structs
+        disabled: true
+  gocritic:
+    enabled-tags:
+      - diagnostic
+      - style
+      - performance
+      - experimental
+    disabled-checks:
+      - unnamedResult
+  gofumpt:
+    module-path: github.com/merzzzl/warp
+    extra-rules: true
+  testifylint:
+    enable-all: true
+  tagliatelle:
+    case:
+      rules:
+        json: goCamel
+        yaml: goCamel
+run:
+  allow-parallel-runners: true
+  go: "1.20"
+output:
+  uniq-by-line: false
+  sort-results: true
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
