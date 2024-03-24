@@ -1,3 +1,3 @@
 build:
-	go build -o warp cmd/app/*
+	go build -o warp cmd/*
 	chmod +x warp

@@ -25,9 +25,7 @@ func main() {
 		log.Fatal().Err(err).Msg("APP", "failed on load config")
 	}
 
-	group := []service.Protocol{
-		local.New(),
-	}
+	group := []service.Protocol{}
 
 	// Register SSH
 	if cfg.SSH != nil {
@@ -44,6 +42,8 @@ func main() {
 	//   LookupHost(ctx context.Context, req *dns.Msg) (*dns.Msg, error)
 	//   HandleTCP(conn net.Conn)
 	//   HandleUDP(conn net.Conn)
+
+	group = append(group, local.New())
 
 	srv, err := service.New(cfg.Tunnel)
 	if err != nil {

@@ -73,7 +73,7 @@ func New(cfg *Config) (*Protocol, error) {
 
 func (p *Protocol) LookupHost(_ context.Context, req *dns.Msg) (*dns.Msg, error) {
 	for _, que := range req.Question {
-		if !p.domain.MatchString(que.Name) || p.dns == "" {
+		if !p.domain.MatchString(que.Name[:len(que.Name)-1]) || p.dns == "" {
 			return req, nil
 		}
 	}

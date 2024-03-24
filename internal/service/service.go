@@ -298,17 +298,17 @@ func (t *Service) ListenAndServe(ctx context.Context, protocols []Protocol) erro
 }
 
 func newPacketConn(host string) (net.PacketConn, error) {
-	for {
+	for i := 0; ; i++ {
 		pc, err := net.ListenPacket("udp", host)
 		if err != nil {
-			if opErr, ok := err.(*net.OpError); !ok || opErr.Op != "listen" {
+			if opErr, ok := err.(*net.OpError); !ok || opErr.Op != "listen" || i == 2 {
 				return nil, err
 			}
 
 			log.Error().Err(err).Msg("DNS", "attempt to release the port")
 
 			if _, err = sys.Command("kill -9 $(sudo lsof -i udp:53 -t)"); err != nil {
-				return nil, err
+				log.Error().Err(err).Msg("DNS", "failed on stop system DNS server")
 			}
 
 			continue
