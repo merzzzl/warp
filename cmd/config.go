@@ -7,14 +7,16 @@ import (
 
 	"gopkg.in/yaml.v2"
 
+	"github.com/merzzzl/warp/internal/protocol/cloudbric"
 	"github.com/merzzzl/warp/internal/protocol/ssh"
 	"github.com/merzzzl/warp/internal/service"
 )
 
 type Config struct {
-	SSH     *ssh.Config     `yaml:"ssh"`
-	Tunnel  *service.Config `yaml:"tunnel"`
-	verbose bool
+	SSH       *ssh.Config       `yaml:"ssh"`
+	Cloudbric *cloudbric.Config `yaml:"cloudbric"`
+	Tunnel    *service.Config   `yaml:"tunnel"`
+	verbose   bool
 }
 
 func loadConfig() (*Config, error) {

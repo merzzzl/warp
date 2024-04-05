@@ -12,10 +12,8 @@ import (
 	"github.com/miekg/dns"
 	"github.com/xjasonlyu/tun2socks/v2/core"
 	"github.com/xjasonlyu/tun2socks/v2/core/adapter"
-	"github.com/xjasonlyu/tun2socks/v2/core/device"
 	"github.com/xjasonlyu/tun2socks/v2/core/device/tun"
 	"github.com/xjasonlyu/tun2socks/v2/core/option"
-	"gvisor.dev/gvisor/pkg/tcpip/stack"
 
 	"github.com/merzzzl/warp/internal/protocol/local"
 	"github.com/merzzzl/warp/internal/utils/log"
@@ -61,9 +59,6 @@ type tunTransportHandler struct {
 }
 
 type Service struct {
-	device  device.Device
-	trans   *tunTransportHandler
-	stack   *stack.Stack
 	routes  *Routes
 	traffic *Traffic
 	name    string
@@ -77,11 +72,6 @@ var (
 
 // New create a tun device and return the Tunnel.
 func New(config *Config) (*Service, error) {
-	dev, err := tun.Open(config.Name, defaultMTU)
-	if err != nil {
-		return nil, err
-	}
-
 	routes := &Routes{
 		gateway: config.IP,
 		list:    make(map[string]Protocol),
@@ -91,50 +81,14 @@ func New(config *Config) (*Service, error) {
 		tarificationMutexLastCheck: time.Now(),
 	}
 
-	handler := newTunTransportHandler(routes, traffic)
-
-	coreStack, err := core.CreateStack(&core.Config{
-		LinkEndpoint:     dev,
-		TransportHandler: handler,
-		Options:          []option.Option{},
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	err = sys.CreateTun(config.Name, config.IP, defaultMTU)
-	if err != nil {
-		return nil, err
-	}
-
-	go handler.run()
-
-	return &Service{
+	s := &Service{
 		name:    config.Name,
 		addr:    config.IP,
-		device:  dev,
-		stack:   coreStack,
-		trans:   handler,
 		routes:  routes,
 		traffic: traffic,
-	}, nil
-}
-
-// Close close the tunnel and return any error that occurred during closing.
-func (t *Service) Close() error {
-	if err := sys.DeleteTun(t.name); err != nil {
-		return err
 	}
 
-	t.stack.Close()
-
-	if err := t.device.Close(); err != nil {
-		return err
-	}
-
-	t.trans.finish()
-
-	return nil
+	return s, nil
 }
 
 func newTunTransportHandler(routes *Routes, traffic *Traffic) *tunTransportHandler {
@@ -249,59 +203,102 @@ func (r *Routes) add(ip string, hand Protocol) {
 
 // ListenAndServe listens on the given address and serves DNS requests using the provided resolvers.
 func (t *Service) ListenAndServe(ctx context.Context, protocols []Protocol) error {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	dev, err := tun.Open(t.name, defaultMTU)
+	if err != nil {
+		return err
+	}
+
+	handler := newTunTransportHandler(t.routes, t.traffic)
+
+	coreStack, err := core.CreateStack(&core.Config{
+		LinkEndpoint:     dev,
+		TransportHandler: handler,
+		Options:          []option.Option{},
+	})
+	if err != nil {
+		return err
+	}
+
+	err = sys.CreateTun(t.name, t.addr, defaultMTU)
+	if err != nil {
+		return err
+	}
+
 	pc, err := newPacketConn(lo0 + ":53")
 	if err != nil {
 		return err
 	}
 
-	go func() {
-		<-ctx.Done()
-
-		if err := pc.Close(); err != nil {
-			log.Error().Err(err).Msg("DNS", "failed to close packet conn")
-		}
-	}()
-
 	if err := sys.SetDNS([]string{lo0}); err != nil {
 		return err
 	}
 
-	defer func() {
-		if err := sys.RestoreDNS(); err != nil {
-			log.Error().Err(err).Msg("DNS", "failed to restore dns")
-		}
-	}()
-
 	dns.HandleFunc(".", func(w dns.ResponseWriter, r *dns.Msg) {
-		rsp, err := t.serveDNS(ctx, protocols, r)
-		if err != nil {
-			log.Error().Err(err).Msg("DNS", "failed to handle dns request")
+		go func() {
+			rsp, err := t.serveDNS(ctx, protocols, r)
+			if err != nil {
+				log.Error().Err(err).Msg("DNS", "failed to handle dns request")
 
-			return
-		}
+				return
+			}
 
-		if err := w.WriteMsg(rsp); err != nil {
-			log.Error().Err(err).Msg("DNS", "failed to write dns response")
+			if err := w.WriteMsg(rsp); err != nil {
+				log.Error().Err(err).Msg("DNS", "failed to write dns response")
 
-			return
-		}
+				return
+			}
+		}()
 	})
+
+	log.Info().Str("host", lo0+":53").Msg("TUN", "start tun interface")
+	defer log.Info().Str("host", lo0+":53").Msg("TUN", "stop tun interface")
+
+	go handler.run()
 
 	log.Info().Str("host", lo0+":53").Msg("DNS", "start dns server")
 	defer log.Info().Str("host", lo0+":53").Msg("DNS", "stop dns server")
 
-	if err := dns.ActivateAndServe(nil, pc, nil); !errors.Is(err, net.ErrClosed) {
-		return err
+	go func() {
+		if err := dns.ActivateAndServe(nil, pc, nil); !errors.Is(err, net.ErrClosed) {
+			log.Error().Err(err).Msgf("DNS", "activate failed")
+
+			cancel()
+		}
+	}()
+
+	<-ctx.Done()
+
+	if err := sys.DeleteTun(t.name); err != nil {
+		log.Error().Err(err).Msg("TUN", "failed to delete tun")
+	}
+
+	coreStack.Close()
+
+	if err := dev.Close(); err != nil {
+		log.Error().Err(err).Msg("TUN", "failed to close device")
+	}
+
+	handler.finish()
+
+	if err := pc.Close(); err != nil {
+		log.Error().Err(err).Msg("DNS", "failed to close conn")
+	}
+
+	if err := sys.RestoreDNS(); err != nil {
+		log.Error().Err(err).Msg("DNS", "failed to restore dns")
 	}
 
 	return nil
 }
 
 func newPacketConn(host string) (net.PacketConn, error) {
-	for i := 0; ; i++ {
+	for {
 		pc, err := net.ListenPacket("udp", host)
 		if err != nil {
-			if opErr, ok := err.(*net.OpError); !ok || opErr.Op != "listen" || i == 2 {
+			if opErr, ok := err.(*net.OpError); !ok || opErr.Op != "listen" {
 				return nil, err
 			}
 
@@ -330,7 +327,7 @@ func (t *Service) serveDNS(ctx context.Context, protocols []Protocol, req *dns.M
 		}
 
 		if _, ok := protocol.(*local.Protocol); !ok {
-			log.Info().DNS(req).Msg("DNS", "dns resolved")
+			log.Info().DNS(rsp).Msg("DNS", "dns resolved")
 
 			for _, ans := range rsp.Answer {
 				if a, ok := ans.(*dns.A); ok {
@@ -346,7 +343,7 @@ func (t *Service) serveDNS(ctx context.Context, protocols []Protocol, req *dns.M
 }
 
 func lookupHost(ctx context.Context, protocol Protocol, req *dns.Msg) (*dns.Msg, error) {
-	ctx, cancel := context.WithDeadline(ctx, time.Now().Add(time.Second*5))
+	ctx, cancel := context.WithDeadline(ctx, time.Now().Add(time.Second*10))
 	defer cancel()
 
 	rsp, err := protocol.LookupHost(ctx, req)

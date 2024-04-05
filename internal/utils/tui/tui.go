@@ -3,7 +3,6 @@ package tui
 import (
 	"errors"
 	"fmt"
-	"os"
 	"sort"
 	"time"
 
@@ -29,7 +28,6 @@ func CreateTUI(routes *service.Routes, traffic *service.Traffic) error {
 	l := &LogWriter{logs: make(chan string, 100)}
 
 	log.SetOutput(l)
-	defer log.SetOutput(os.Stdout)
 
 	g, err := gocui.NewGui(gocui.OutputNormal)
 	if err != nil {

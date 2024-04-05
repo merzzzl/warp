@@ -8,6 +8,7 @@ import (
 	"runtime"
 	"syscall"
 
+	"github.com/merzzzl/warp/internal/protocol/cloudbric"
 	"github.com/merzzzl/warp/internal/protocol/local"
 	"github.com/merzzzl/warp/internal/protocol/ssh"
 	"github.com/merzzzl/warp/internal/service"
@@ -25,32 +26,10 @@ func main() {
 		log.Fatal().Err(err).Msg("APP", "failed on load config")
 	}
 
-	group := []service.Protocol{}
-
-	// Register SSH
-	if cfg.SSH != nil {
-		sshR, err := ssh.New(cfg.SSH)
-		if err != nil {
-			log.Fatal().Err(err).Msg("APP", "failed to create SSH route")
-		}
-
-		group = append(group, sshR)
-	}
-
-	// INFO: Add more protocols here
-	// protocol must implement:
-	//   LookupHost(ctx context.Context, req *dns.Msg) (*dns.Msg, error)
-	//   HandleTCP(conn net.Conn)
-	//   HandleUDP(conn net.Conn)
-
-	group = append(group, local.New())
-
 	srv, err := service.New(cfg.Tunnel)
 	if err != nil {
 		log.Fatal().Err(err).Msg("APP", "failed create tunnel")
 	}
-
-	defer srv.Close()
 
 	if !cfg.verbose {
 		go func() {
@@ -74,7 +53,37 @@ func main() {
 		}()
 	}
 
+	group := []service.Protocol{}
+
+	// Register SSH
+	if cfg.SSH != nil {
+		sshR, err := ssh.New(cfg.SSH)
+		if err != nil {
+			log.Fatal().Err(err).Msg("APP", "failed to create SSH route")
+		}
+
+		group = append(group, sshR)
+	}
+
+	// Register Cloudbric
+	if cfg.Cloudbric != nil {
+		cbR, err := cloudbric.New(ctx, cfg.Cloudbric)
+		if err != nil {
+			log.Fatal().Err(err).Msg("APP", "failed to create Cloudbric route")
+		}
+
+		group = append(group, cbR)
+	}
+
+	// INFO: Add more protocols here
+	// protocol must implement:
+	//   LookupHost(ctx context.Context, req *dns.Msg) (*dns.Msg, error)
+	//   HandleTCP(conn net.Conn)
+	//   HandleUDP(conn net.Conn)
+
+	group = append(group, local.New())
+
 	if err := srv.ListenAndServe(ctx, group); err != nil {
-		log.Error().Err(err).Msg("APP", "failed to start DNS")
+		log.Fatal().Err(err).Msg("APP", "failed to run service")
 	}
 }

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/miekg/dns"
@@ -15,6 +16,11 @@ var l = setLoggerOutput(os.Stdout)
 
 type Event struct {
 	e *zerolog.Event
+}
+
+// Debug logs a message at info level.
+func Debug() *Event {
+	return &Event{l.Debug()}
 }
 
 // Info logs a message at info level.
@@ -53,8 +59,26 @@ func (e *Event) Msg(tag, msg string) {
 
 // DNS logs a DNS message.
 func (e *Event) DNS(m *dns.Msg) *Event {
+	names := make([]string, 0, len(m.Question))
+	ips := make([]string, 0, len(m.Answer))
+
 	for _, que := range m.Question {
-		e = e.Str("name", que.Name)
+		names = append(names, que.Name)
+	}
+
+	for _, ans := range m.Answer {
+		ansA, ok := ans.(*dns.A)
+		if !ok {
+			continue
+		}
+
+		ips = append(ips, ansA.A.String())
+	}
+
+	e = e.Str("names", strings.Join(names, ","))
+
+	if len(ips) != 0 {
+		e = e.Str("ips", strings.Join(ips, ","))
 	}
 
 	return e
@@ -117,5 +141,5 @@ func setLoggerOutput(out io.Writer) zerolog.Logger {
 
 			return fmt.Sprintf("\033[36m%s\033[0m", parse.Format("15:04:05"))
 		},
-	})
+	}).Level(zerolog.InfoLevel)
 }

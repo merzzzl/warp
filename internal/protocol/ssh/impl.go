@@ -2,31 +2,28 @@ package ssh
 
 import (
 	"context"
-	"io"
 	"net"
 	"regexp"
 	"strings"
-	"sync"
 
 	"github.com/miekg/dns"
 	"golang.org/x/crypto/ssh"
 
 	"github.com/merzzzl/warp/internal/utils/log"
+	"github.com/merzzzl/warp/internal/utils/network"
 )
 
 type Config struct {
-	User     string
-	Password string
-	Host     string
-	Domain   string
+	User     string `yaml:"user"`
+	Password string `yaml:"password"`
+	Host     string `yaml:"host"`
+	Domain   string `yaml:"domain"`
 }
 
 type Protocol struct {
-	ips    map[string]any
 	cli    *ssh.Client
 	domain *regexp.Regexp
 	dns    string
-	mutex  sync.Mutex
 }
 
 func New(cfg *Config) (*Protocol, error) {
@@ -67,7 +64,6 @@ func New(cfg *Config) (*Protocol, error) {
 		cli:    cli,
 		domain: rx,
 		dns:    dnsIP,
-		ips:    make(map[string]any, 0),
 	}, nil
 }
 
@@ -82,6 +78,7 @@ func (p *Protocol) LookupHost(_ context.Context, req *dns.Msg) (*dns.Msg, error)
 	if err != nil {
 		return nil, err
 	}
+
 	defer dnsConn.Close()
 
 	co := new(dns.Conn)
@@ -97,16 +94,6 @@ func (p *Protocol) LookupHost(_ context.Context, req *dns.Msg) (*dns.Msg, error)
 		return nil, err
 	}
 
-	p.mutex.Lock()
-
-	for _, ans := range rsp.Answer {
-		if a, ok := ans.(*dns.A); ok {
-			p.ips[a.A.String()] = struct{}{}
-		}
-	}
-
-	p.mutex.Unlock()
-
 	return rsp, nil
 }
 
@@ -120,39 +107,11 @@ func (p *Protocol) HandleTCP(conn net.Conn) {
 		return
 	}
 
-	var wg sync.WaitGroup
-
-	wg.Add(2)
-
-	go func() {
-		_, err := io.Copy(remoteConn, conn)
-		if err != nil {
-			log.Error().Err(err).Msg("SSH", "failed to transfer data")
-		}
-
-		if err := remoteConn.Close(); err != nil {
-			log.Error().Err(err).Msg("SSH", "failed to close conn")
-		}
-
-		wg.Done()
-	}()
-
-	go func() {
-		_, err := io.Copy(conn, remoteConn)
-		if err != nil {
-			log.Error().Err(err).Msg("SSH", "failed to transfer data")
-		}
-
-		if err := conn.Close(); err != nil {
-			log.Error().Err(err).Msg("SSH", "failed to close conn")
-		}
-
-		wg.Done()
-	}()
-
-	wg.Wait()
+	network.Transfer("SSH", conn, remoteConn)
 }
 
 func (*Protocol) HandleUDP(conn net.Conn) {
 	log.Info().Str("dest", conn.LocalAddr().String()).Str("type", "UDP").Msg("SSH", "handle conn")
+
+	log.Error().Msg("SSH", "udp unsupported")
 }

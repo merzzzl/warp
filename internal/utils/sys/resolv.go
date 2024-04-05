@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+
+	"github.com/merzzzl/warp/internal/utils/log"
 )
 
 type resolvHandler struct {
@@ -84,6 +86,10 @@ func SetDNS(dns []string) error {
 
 	if _, err := Command("networksetup -setdnsservers %s %s", resolv.serviceName, servers); err != nil {
 		return fmt.Errorf("failed to set dns server: %w", err)
+	}
+
+	if _, err := Command("killall -HUP mDNSResponder"); err != nil {
+		log.Error().Err(err).Str("DNS", "failed to flush cache")
 	}
 
 	return nil
