@@ -64,7 +64,7 @@ cloudbric:
 
 ## Examples
 
-Here's an updated example demonstrating how to forward TCP traffic through an SSH tunnel, including routing to a Kubernetes network:
+Here's an updated example demonstrating how to forward TCP traffic through an SSH tunnel:
 
 ```bash
 sudo ./warp
