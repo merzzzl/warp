@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"errors"
 	"net"
 	"strings"
 	"sync"
@@ -50,12 +49,14 @@ type Protocol interface {
 }
 
 type tunTransportHandler struct {
+	addr     string
 	tcpQueue chan adapter.TCPConn
 	udpQueue chan adapter.UDPConn
 	closeCh  chan struct{}
 	adapter.TransportHandler
-	routes  *Routes
-	traffic *Traffic
+	routes    *Routes
+	traffic   *Traffic
+	protocols []Protocol
 }
 
 type Service struct {
@@ -65,10 +66,7 @@ type Service struct {
 	addr    string
 }
 
-var (
-	defaultMTU uint32 = 1480
-	lo0               = "127.0.0.1"
-)
+var defaultMTU uint32 = 1480
 
 // New create a tun device and return the Tunnel.
 func New(config *Config) (*Service, error) {
@@ -91,11 +89,13 @@ func New(config *Config) (*Service, error) {
 	return s, nil
 }
 
-func newTunTransportHandler(routes *Routes, traffic *Traffic) *tunTransportHandler {
+func newTunTransportHandler(routes *Routes, traffic *Traffic, protocols []Protocol, addr string) *tunTransportHandler {
 	handler := &tunTransportHandler{
-		tcpQueue: make(chan adapter.TCPConn, 128),
-		udpQueue: make(chan adapter.UDPConn, 128),
-		closeCh:  make(chan struct{}, 1),
+		tcpQueue:  make(chan adapter.TCPConn, 128),
+		udpQueue:  make(chan adapter.UDPConn, 128),
+		closeCh:   make(chan struct{}, 1),
+		protocols: protocols,
+		addr:      addr,
 	}
 
 	handler.TransportHandler = handler
@@ -105,7 +105,7 @@ func newTunTransportHandler(routes *Routes, traffic *Traffic) *tunTransportHandl
 	return handler
 }
 
-func (h *tunTransportHandler) run() {
+func (h *tunTransportHandler) run(ctx context.Context) {
 	defer func() {
 		if r := recover(); r != nil {
 			log.Error().Msgf("SYS", "transport panic: %v", r)
@@ -115,9 +115,9 @@ func (h *tunTransportHandler) run() {
 	for {
 		select {
 		case conn := <-h.tcpQueue:
-			go h.handleTCPConn(conn)
+			go h.handleTCPConn(ctx, conn)
 		case conn := <-h.udpQueue:
-			go h.handleUDPConn(conn)
+			go h.handleUDPConn(ctx, conn)
 		case <-h.closeCh:
 			return
 		}
@@ -132,8 +132,15 @@ func (h *tunTransportHandler) HandleTCP(conn adapter.TCPConn) { h.tcpQueue <- co
 
 func (h *tunTransportHandler) HandleUDP(conn adapter.UDPConn) { h.udpQueue <- conn }
 
-func (h *tunTransportHandler) handleTCPConn(conn adapter.TCPConn) {
+func (h *tunTransportHandler) handleTCPConn(ctx context.Context, conn adapter.TCPConn) {
 	defer conn.Close()
+
+	sip := strings.Split(conn.LocalAddr().String(), ":")
+	if sip[0] == h.addr && sip[1] == "53" {
+		h.handleDNS(ctx, conn)
+
+		return
+	}
 
 	if handler := h.routes.get(strings.Split(conn.LocalAddr().String(), ":")[0]); handler != nil {
 		handler.HandleTCP(h.traffic.newConn(conn))
@@ -144,8 +151,15 @@ func (h *tunTransportHandler) handleTCPConn(conn adapter.TCPConn) {
 	log.Error().Msgf("TUN", "no handler for tcp connection to: %s", conn.LocalAddr())
 }
 
-func (h *tunTransportHandler) handleUDPConn(conn adapter.UDPConn) {
+func (h *tunTransportHandler) handleUDPConn(ctx context.Context, conn adapter.UDPConn) {
 	defer conn.Close()
+
+	sip := strings.Split(conn.LocalAddr().String(), ":")
+	if sip[0] == h.addr && sip[1] == "53" {
+		h.handleDNS(ctx, conn)
+
+		return
+	}
 
 	if handler := h.routes.get(strings.Split(conn.LocalAddr().String(), ":")[0]); handler != nil {
 		handler.HandleUDP(h.traffic.newConn(conn))
@@ -211,7 +225,7 @@ func (t *Service) ListenAndServe(ctx context.Context, protocols []Protocol) erro
 		return err
 	}
 
-	handler := newTunTransportHandler(t.routes, t.traffic)
+	handler := newTunTransportHandler(t.routes, t.traffic, protocols, t.addr)
 
 	coreStack, err := core.CreateStack(&core.Config{
 		LinkEndpoint:     dev,
@@ -227,47 +241,17 @@ func (t *Service) ListenAndServe(ctx context.Context, protocols []Protocol) erro
 		return err
 	}
 
-	pc, err := newPacketConn(lo0 + ":53")
-	if err != nil {
+	if err := sys.SetDNS([]string{t.addr}); err != nil {
 		return err
 	}
 
-	if err := sys.SetDNS([]string{lo0}); err != nil {
-		return err
-	}
+	log.Info().Str("host", t.addr+":53").Msg("TUN", "start tun interface")
+	defer log.Info().Str("host", t.addr+":53").Msg("TUN", "stop tun interface")
 
-	dns.HandleFunc(".", func(w dns.ResponseWriter, r *dns.Msg) {
-		go func() {
-			rsp, err := t.serveDNS(ctx, protocols, r)
-			if err != nil {
-				log.Error().Err(err).Msg("DNS", "failed to handle dns request")
+	go handler.run(ctx)
 
-				return
-			}
-
-			if err := w.WriteMsg(rsp); err != nil {
-				log.Error().Err(err).Msg("DNS", "failed to write dns response")
-
-				return
-			}
-		}()
-	})
-
-	log.Info().Str("host", lo0+":53").Msg("TUN", "start tun interface")
-	defer log.Info().Str("host", lo0+":53").Msg("TUN", "stop tun interface")
-
-	go handler.run()
-
-	log.Info().Str("host", lo0+":53").Msg("DNS", "start dns server")
-	defer log.Info().Str("host", lo0+":53").Msg("DNS", "stop dns server")
-
-	go func() {
-		if err := dns.ActivateAndServe(nil, pc, nil); !errors.Is(err, net.ErrClosed) {
-			log.Error().Err(err).Msgf("DNS", "activate failed")
-
-			cancel()
-		}
-	}()
+	log.Info().Str("host", t.addr+":53").Msg("DNS", "start dns server")
+	defer log.Info().Str("host", t.addr+":53").Msg("DNS", "stop dns server")
 
 	<-ctx.Done()
 
@@ -283,10 +267,6 @@ func (t *Service) ListenAndServe(ctx context.Context, protocols []Protocol) erro
 
 	handler.finish()
 
-	if err := pc.Close(); err != nil {
-		log.Error().Err(err).Msg("DNS", "failed to close conn")
-	}
-
 	if err := sys.RestoreDNS(); err != nil {
 		log.Error().Err(err).Msg("DNS", "failed to restore dns")
 	}
@@ -294,29 +274,52 @@ func (t *Service) ListenAndServe(ctx context.Context, protocols []Protocol) erro
 	return nil
 }
 
-func newPacketConn(host string) (net.PacketConn, error) {
-	for {
-		pc, err := net.ListenPacket("udp", host)
-		if err != nil {
-			if opErr, ok := err.(*net.OpError); !ok || opErr.Op != "listen" {
-				return nil, err
-			}
+func (h *tunTransportHandler) handleDNS(ctx context.Context, conn net.Conn) {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 
-			log.Error().Err(err).Msg("DNS", "attempt to release the port")
+	defer conn.Close()
 
-			if _, err = sys.Command("kill -9 $(sudo lsof -i udp:53 -t)"); err != nil {
-				log.Error().Err(err).Msg("DNS", "failed on stop system DNS server")
-			}
+	b := make([]byte, 1024)
 
-			continue
-		}
+	n, err := conn.Read(b)
+	if err != nil {
+		log.Error().Err(err).Msg("DNS", "failed read msg")
 
-		return pc, nil
+		return
+	}
+
+	b = b[:n]
+
+	msg := new(dns.Msg)
+
+	err = msg.Unpack(b)
+	if err != nil {
+		log.Error().Err(err).Msg("DNS", "failed unpack msg")
+
+		return
+	}
+
+	msg, err = h.serveDNS(ctx, msg)
+	if err != nil {
+		log.Error().Err(err).Msg("DNS", "failed serve msg")
+
+		return
+	}
+
+	b, err = msg.Pack()
+	if err != nil {
+		return
+	}
+
+	_, err = conn.Write(b)
+	if err != nil {
+		return
 	}
 }
 
-func (t *Service) serveDNS(ctx context.Context, protocols []Protocol, req *dns.Msg) (*dns.Msg, error) {
-	for _, protocol := range protocols {
+func (h *tunTransportHandler) serveDNS(ctx context.Context, req *dns.Msg) (*dns.Msg, error) {
+	for _, protocol := range h.protocols {
 		rsp, err := lookupHost(ctx, protocol, req)
 		if err != nil {
 			return nil, err
@@ -331,7 +334,7 @@ func (t *Service) serveDNS(ctx context.Context, protocols []Protocol, req *dns.M
 
 			for _, ans := range rsp.Answer {
 				if a, ok := ans.(*dns.A); ok {
-					t.routes.add(a.A.String(), protocol)
+					h.routes.add(a.A.String(), protocol)
 				}
 			}
 		}
@@ -343,9 +346,6 @@ func (t *Service) serveDNS(ctx context.Context, protocols []Protocol, req *dns.M
 }
 
 func lookupHost(ctx context.Context, protocol Protocol, req *dns.Msg) (*dns.Msg, error) {
-	ctx, cancel := context.WithDeadline(ctx, time.Now().Add(time.Second*10))
-	defer cancel()
-
 	rsp, err := protocol.LookupHost(ctx, req)
 	if err != nil {
 		return nil, err

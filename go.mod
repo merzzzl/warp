@@ -1,6 +1,6 @@
 module github.com/merzzzl/warp
 
-go 1.22
+go 1.21
 
 require (
 	github.com/MakeNowJust/heredoc v1.0.0
