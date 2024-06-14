@@ -34,6 +34,8 @@ type Traffic struct {
 	tarificationMutex          sync.Mutex
 	transferredIn              atomic.Int64
 	transferredOut             atomic.Int64
+	transferredInSum           atomic.Int64
+	transferredOutSum          atomic.Int64
 }
 
 type Routes struct {
@@ -372,6 +374,11 @@ func (t *Traffic) GetRates() (float64, float64) {
 	return inRate, outRate
 }
 
+// GetTransferred returns the transferred datat for in and out traffic.
+func (t *Traffic) GetTransferred() (float64, float64) {
+	return float64(t.transferredInSum.Load()), float64(t.transferredOutSum.Load())
+}
+
 func (t *Traffic) newConn(conn net.Conn) *trafficConn {
 	return &trafficConn{
 		Conn:    conn,
@@ -384,6 +391,7 @@ func (t *trafficConn) Read(p []byte) (n int, err error) {
 	s, err := t.Conn.Read(p)
 
 	t.traffic.transferredIn.Add(int64(s))
+	t.traffic.transferredInSum.Add(int64(s))
 
 	return s, err
 }
@@ -393,6 +401,7 @@ func (t *trafficConn) Write(p []byte) (n int, err error) {
 	s, err := t.Conn.Write(p)
 
 	t.traffic.transferredOut.Add(int64(s))
+	t.traffic.transferredOutSum.Add(int64(s))
 
 	return s, err
 }

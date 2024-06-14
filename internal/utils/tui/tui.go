@@ -85,7 +85,7 @@ func layout(g *gocui.Gui, routes *service.Routes, traffic *service.Traffic, logs
 		}()
 	}
 
-	if v, err := g.SetView("stats", maxX-20, 0, maxX-1, 3); err != nil {
+	if v, err := g.SetView("stats", maxX-20, 0, maxX-1, 5); err != nil {
 		if !errors.Is(err, gocui.ErrUnknownView) {
 			return err
 		}
@@ -98,9 +98,12 @@ func layout(g *gocui.Gui, routes *service.Routes, traffic *service.Traffic, logs
 					v.Clear()
 
 					in, out := traffic.GetRates()
+					sin, sout := traffic.GetTransferred()
 
-					fmt.Fprintf(v, "In:  %.2f\n", in/1024)
-					fmt.Fprintf(v, "Out: %.2f\n", out/1024)
+					fmt.Fprintf(v, "In:  %.2f Kb/s\n", in/1024)
+					fmt.Fprintf(v, "     %s\n", byteToSI(sin))
+					fmt.Fprintf(v, "Out: %.2f Kb/s\n", out/1024)
+					fmt.Fprintf(v, "     %s\n", byteToSI(sout))
 
 					return nil
 				})
@@ -108,7 +111,7 @@ func layout(g *gocui.Gui, routes *service.Routes, traffic *service.Traffic, logs
 		}()
 	}
 
-	if v, err := g.SetView("ips", maxX-20, 4, maxX-1, maxY-1); err != nil {
+	if v, err := g.SetView("ips", maxX-20, 6, maxX-1, maxY-1); err != nil {
 		if !errors.Is(err, gocui.ErrUnknownView) {
 			return err
 		}
@@ -134,4 +137,32 @@ func layout(g *gocui.Gui, routes *service.Routes, traffic *service.Traffic, logs
 	}
 
 	return nil
+}
+
+func byteToSI(i float64) string {
+	if i < 1024 {
+		return fmt.Sprintf("%.2f B", i)
+	}
+
+	i /= 1024
+
+	if i < 1024 {
+		return fmt.Sprintf("%.2f KB", i)
+	}
+
+	i /= 1024
+
+	if i < 1024 {
+		return fmt.Sprintf("%.2f MB", i)
+	}
+
+	i /= 1024
+
+	if i < 1024 {
+		return fmt.Sprintf("%.2f GB", i)
+	}
+
+	i /= 1024
+
+	return fmt.Sprintf("%.2f TB", i)
 }

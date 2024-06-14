@@ -55,31 +55,37 @@ func main() {
 
 	group := []service.Protocol{}
 
-	// Register SSH
-	if cfg.SSH != nil {
-		sshR, err := ssh.New(cfg.SSH)
-		if err != nil {
-			log.Fatal().Err(err).Msg("APP", "failed to create SSH route")
+	for _, pConfig := range cfg.Protocols {
+		// Register SSH
+		if pConfig.SSH != nil {
+			sshR, err := ssh.New(pConfig.SSH)
+			if err != nil {
+				log.Fatal().Err(err).Msg("APP", "failed to create SSH route")
+			}
+
+			group = append(group, sshR)
+
+			continue
 		}
 
-		group = append(group, sshR)
-	}
+		// Register WireGuard
+		if pConfig.WireGuard != nil {
+			cbR, err := wg.New(ctx, pConfig.WireGuard)
+			if err != nil {
+				log.Fatal().Err(err).Msg("APP", "failed to create WireGuard route")
+			}
 
-	// Register WireGuard
-	if cfg.WireGuard != nil {
-		cbR, err := wg.New(ctx, cfg.WireGuard)
-		if err != nil {
-			log.Fatal().Err(err).Msg("APP", "failed to create WireGuard route")
+			group = append(group, cbR)
+
+			continue
 		}
 
-		group = append(group, cbR)
+		// INFO: Add more protocols here
+		// protocol must implement:
+		//   LookupHost(ctx context.Context, req *dns.Msg) (*dns.Msg, error)
+		//   HandleTCP(conn net.Conn)
+		//   HandleUDP(conn net.Conn)
 	}
-
-	// INFO: Add more protocols here
-	// protocol must implement:
-	//   LookupHost(ctx context.Context, req *dns.Msg) (*dns.Msg, error)
-	//   HandleTCP(conn net.Conn)
-	//   HandleUDP(conn net.Conn)
 
 	group = append(group, local.New())
 
