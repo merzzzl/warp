@@ -8,9 +8,9 @@ import (
 	"runtime"
 	"syscall"
 
-	"github.com/merzzzl/warp/internal/protocol/cloudbric"
 	"github.com/merzzzl/warp/internal/protocol/local"
 	"github.com/merzzzl/warp/internal/protocol/ssh"
+	"github.com/merzzzl/warp/internal/protocol/wg"
 	"github.com/merzzzl/warp/internal/service"
 	"github.com/merzzzl/warp/internal/utils/log"
 	"github.com/merzzzl/warp/internal/utils/tui"
@@ -65,11 +65,11 @@ func main() {
 		group = append(group, sshR)
 	}
 
-	// Register Cloudbric
-	if cfg.Cloudbric != nil {
-		cbR, err := cloudbric.New(ctx, cfg.Cloudbric)
+	// Register WireGuard
+	if cfg.WireGuard != nil {
+		cbR, err := wg.New(ctx, cfg.WireGuard)
 		if err != nil {
-			log.Fatal().Err(err).Msg("APP", "failed to create Cloudbric route")
+			log.Fatal().Err(err).Msg("APP", "failed to create WireGuard route")
 		}
 
 		group = append(group, cbR)

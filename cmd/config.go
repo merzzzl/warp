@@ -7,15 +7,15 @@ import (
 
 	"gopkg.in/yaml.v2"
 
-	"github.com/merzzzl/warp/internal/protocol/cloudbric"
 	"github.com/merzzzl/warp/internal/protocol/ssh"
+	"github.com/merzzzl/warp/internal/protocol/wg"
 	"github.com/merzzzl/warp/internal/service"
 )
 
 type Config struct {
-	SSH       *ssh.Config       `yaml:"ssh"`
-	Cloudbric *cloudbric.Config `yaml:"cloudbric"`
-	Tunnel    *service.Config   `yaml:"tunnel"`
+	SSH       *ssh.Config     `yaml:"ssh"`
+	WireGuard *wg.Config      `yaml:"wireguard"`
+	Tunnel    *service.Config `yaml:"tunnel"`
 	verbose   bool
 }
 
