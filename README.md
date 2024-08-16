@@ -1,6 +1,6 @@
 # WARP
 
-WARP now integrates with Cloudbric service, offering an advanced solution for forwarding TCP traffic through an SSH tunnel with the added advantage of a free VPN over WireGuard. This integration aims to enhance the security and efficiency of your network data routing.
+WARP offering an advanced solution for forwarding TCP traffic through an SSH tunnel with the added advantage of a free VPN over WireGuard. This integration aims to enhance the security and efficiency of your network data routing.
 
 ## Table of Contents
 
@@ -14,7 +14,7 @@ WARP now integrates with Cloudbric service, offering an advanced solution for fo
 
 ## Introduction
 
-With the latest update, WARP consolidates its functionality by not only forwarding TCP traffic through an SSH tunnel but also by offering seamless integration with Cloudbric for enhanced VPN services via WireGuard. This makes WARP a comprehensive network security tool.
+With the latest update, WARP consolidates its functionality by not only forwarding TCP traffic through an SSH tunnel but also by offering seamless integration with WireGuard. This makes WARP a comprehensive network security tool.
 
 ## Installation
 
@@ -56,10 +56,6 @@ ssh:
   password: <PASSWORD>
   host: <HOST>
   domain: .*example\.com$
-cloudbric:
-  domain: .*example\.com$
-  device_id: <DEVICE_UUID>
-  private_key: <PRIVATE_KEY>
 ```
 
 ## Examples

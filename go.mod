@@ -4,13 +4,11 @@ go 1.21
 
 require (
 	github.com/MakeNowJust/heredoc v1.0.0
-	github.com/google/uuid v1.3.0
 	github.com/jroimartin/gocui v0.5.0
 	github.com/miekg/dns v1.1.56
 	github.com/rs/zerolog v1.30.0
 	github.com/xjasonlyu/tun2socks/v2 v2.5.1
 	golang.org/x/crypto v0.13.0
-	golang.zx2c4.com/wireguard/wgctrl v0.0.0-20230429144221-925a1e7659e6
 	gopkg.in/yaml.v2 v2.4.0
 )
 
