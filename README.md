@@ -29,7 +29,7 @@ make build
 
 ## Usage
 
-To use WARP, begin by creating a ~/.warp.conf file in your home directory. Launch WARP with the following command, adjusting the options as needed::
+To use WARP, begin by creating a ~/.warp.yaml file in your home directory. Launch WARP with the following command, adjusting the options as needed::
 
 ```bash
 sudo ./warp --verbose
