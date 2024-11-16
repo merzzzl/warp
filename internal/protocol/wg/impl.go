@@ -25,12 +25,14 @@ type Config struct {
 	Domain        string   `yaml:"domain"`
 	Address       string   `yaml:"address"`
 	DNS           []string `yaml:"dns"`
+	IPs           []string `yaml:"ips"`
 }
 
 type Protocol struct {
 	tnet   *netstack.Net
 	domain *regexp.Regexp
 	dns    []string
+	ips    []string
 }
 
 var defaultMTU = 1480
@@ -111,19 +113,31 @@ func New(ctx context.Context, cfg *Config) (*Protocol, error) {
 		dev.Close()
 	}()
 
-	rx, err := regexp.Compile(cfg.Domain)
-	if err != nil {
-		return nil, err
+	var rx *regexp.Regexp
+	if cfg.Domain != "" {
+		rx, err = regexp.Compile(cfg.Domain)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	return &Protocol{
 		domain: rx,
 		tnet:   tnet,
 		dns:    cfg.DNS,
+		ips:    cfg.IPs,
 	}, nil
 }
 
+func (p *Protocol) FixedIPs() []string {
+	return p.ips
+}
+
 func (p *Protocol) LookupHost(ctx context.Context, req *dns.Msg) (*dns.Msg, error) {
+	if p.domain == nil {
+		return &dns.Msg{}, nil
+	}
+
 	for _, que := range req.Question {
 		if !p.domain.MatchString(que.Name[:len(que.Name)-1]) {
 			return req, nil

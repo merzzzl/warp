@@ -82,6 +82,7 @@ func main() {
 
 		// INFO: Add more protocols here
 		// protocol must implement:
+		//   FixedIPs() []string
 		//   LookupHost(ctx context.Context, req *dns.Msg) (*dns.Msg, error)
 		//   HandleTCP(conn net.Conn)
 		//   HandleUDP(conn net.Conn)

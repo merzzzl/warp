@@ -48,6 +48,7 @@ type Protocol interface {
 	HandleTCP(conn net.Conn)
 	HandleUDP(conn net.Conn)
 	LookupHost(ctx context.Context, req *dns.Msg) (*dns.Msg, error)
+	FixedIPs() []string
 }
 
 type tunTransportHandler struct {
@@ -73,7 +74,7 @@ var defaultMTU uint32 = 1480
 // New create a tun device and return the Tunnel.
 func New(config *Config) (*Service, error) {
 	routes := &Routes{
-		gateway: config.IP,
+		gateway: config.Name,
 		list:    make(map[string]Protocol),
 	}
 
@@ -254,6 +255,12 @@ func (t *Service) ListenAndServe(ctx context.Context, protocols []Protocol) erro
 
 	log.Info().Str("host", t.addr+":53").Msg("DNS", "start dns server")
 	defer log.Info().Str("host", t.addr+":53").Msg("DNS", "stop dns server")
+
+	for _, protocol := range protocols {
+		for _, ip := range protocol.FixedIPs() {
+			handler.routes.add(ip, protocol)
+		}
+	}
 
 	<-ctx.Done()
 

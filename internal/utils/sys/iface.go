@@ -26,7 +26,7 @@ func DeleteTun(name string) error {
 // AddRoute adds a new static route with the given parameters.
 func AddRoute(destination, gateway string) error {
 	destination = strings.TrimSpace(destination)
-	if _, err := Command("route add -net %s %s", destination, gateway); err != nil {
+	if _, err := Command("route add -net %s -iface %s", destination, gateway); err != nil {
 		return fmt.Errorf("failed to add route: %w", err)
 	}
 

@@ -38,3 +38,5 @@ func (p *Protocol) LookupHost(ctx context.Context, req *dns.Msg) (*dns.Msg, erro
 func (Protocol) HandleTCP(net.Conn) {}
 
 func (Protocol) HandleUDP(net.Conn) {}
+
+func (Protocol) FixedIPs() []string { return nil }

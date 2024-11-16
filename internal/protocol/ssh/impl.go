@@ -14,16 +14,19 @@ import (
 )
 
 type Config struct {
-	User     string `yaml:"user"`
-	Password string `yaml:"password"`
-	Host     string `yaml:"host"`
-	Domain   string `yaml:"domain"`
+	User     string   `yaml:"user"`
+	Password string   `yaml:"password"`
+	Host     string   `yaml:"host"`
+	Domain   string   `yaml:"domain"`
+	IPs      []string `yaml:"ips"`
 }
 
 type Protocol struct {
-	cli    *ssh.Client
-	domain *regexp.Regexp
-	dns    string
+	sshConfig *ssh.ClientConfig
+	cli       *ssh.Client
+	domain    *regexp.Regexp
+	dns       string
+	ips       []string
 }
 
 func New(cfg *Config) (*Protocol, error) {
@@ -55,19 +58,31 @@ func New(cfg *Config) (*Protocol, error) {
 		dnsIP = strings.TrimSpace(string(sshDNS))
 	}
 
-	rx, err := regexp.Compile(cfg.Domain)
-	if err != nil {
-		return nil, err
+	var rx *regexp.Regexp
+	if cfg.Domain != "" {
+		rx, err = regexp.Compile(cfg.Domain)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	return &Protocol{
 		cli:    cli,
 		domain: rx,
 		dns:    dnsIP,
+		ips:    cfg.IPs,
 	}, nil
 }
 
+func (p *Protocol) FixedIPs() []string {
+	return p.ips
+}
+
 func (p *Protocol) LookupHost(_ context.Context, req *dns.Msg) (*dns.Msg, error) {
+	if p.domain == nil {
+		return &dns.Msg{}, nil
+	}
+
 	for _, que := range req.Question {
 		if !p.domain.MatchString(que.Name[:len(que.Name)-1]) || p.dns == "" {
 			return req, nil
