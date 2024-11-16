@@ -22,11 +22,10 @@ type Config struct {
 }
 
 type Protocol struct {
-	sshConfig *ssh.ClientConfig
-	cli       *ssh.Client
-	domain    *regexp.Regexp
-	dns       string
-	ips       []string
+	cli    *ssh.Client
+	domain *regexp.Regexp
+	dns    string
+	ips    []string
 }
 
 func New(cfg *Config) (*Protocol, error) {

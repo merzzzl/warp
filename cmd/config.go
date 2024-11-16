@@ -14,13 +14,15 @@ import (
 	"github.com/merzzzl/warp/internal/service"
 )
 
+var errInvalidConfig = errors.New("invalid config of protocols")
+
 type ConfigProtocol struct {
 	SSH       *ssh.Config `yaml:"ssh"`
 	WireGuard *wg.Config  `yaml:"wireguard"`
 }
 
 type Config struct {
-	Tunnel    *service.Config `yaml:"tunnel"`
+	Tunnel    *service.Config  `yaml:"tunnel"`
 	Protocols []ConfigProtocol `yaml:"protocols"`
 	verbose   bool
 }
@@ -48,7 +50,7 @@ func loadConfig() (*Config, error) {
 	}
 
 	if !cfg.validate() {
-		return nil, errors.New("invalid config of protocols")
+		return nil, errInvalidConfig
 	}
 
 	return &cfg, nil
