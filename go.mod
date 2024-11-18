@@ -7,12 +7,16 @@ require (
 	github.com/jroimartin/gocui v0.5.0
 	github.com/miekg/dns v1.1.56
 	github.com/rs/zerolog v1.30.0
+	github.com/seancfoley/ipaddress-go v1.7.0
 	github.com/xjasonlyu/tun2socks/v2 v2.5.1
 	golang.org/x/crypto v0.13.0
 	gopkg.in/yaml.v2 v2.4.0
 )
 
-require gvisor.dev/gvisor v0.0.0-20230927004350-cbd86285d259 // indirect
+require (
+	github.com/seancfoley/bintree v1.3.1 // indirect
+	gvisor.dev/gvisor v0.0.0-20230927004350-cbd86285d259 // indirect
+)
 
 require (
 	github.com/google/btree v1.1.2 // indirect

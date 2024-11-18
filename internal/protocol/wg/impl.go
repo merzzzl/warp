@@ -3,6 +3,9 @@ package wg
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
+	"encoding/hex"
+	"errors"
 	"fmt"
 	"net"
 	"net/netip"
@@ -17,6 +20,8 @@ import (
 	"github.com/merzzzl/warp/internal/utils/log"
 	"github.com/merzzzl/warp/internal/utils/network"
 )
+
+var errKeyInvalid = errors.New("invalid wireguard key")
 
 type Config struct {
 	PrivateKey    string   `yaml:"private_key"`
@@ -129,25 +134,40 @@ func New(ctx context.Context, cfg *Config) (*Protocol, error) {
 	}, nil
 }
 
+func encodeBase64ToHex(key string) (string, error) {
+	decoded, err := base64.StdEncoding.DecodeString(key)
+	if err != nil {
+		return "", fmt.Errorf("invalid base64 string (%s): %w", key, err)
+	}
+
+	if len(decoded) != 32 {
+		return "", fmt.Errorf("key should be 32 bytes (%s): %w", key, errKeyInvalid)
+	}
+
+	return hex.EncodeToString(decoded), nil
+}
+
 func (p *Protocol) FixedIPs() []string {
 	return p.ips
 }
 
-func (p *Protocol) LookupHost(ctx context.Context, req *dns.Msg) (*dns.Msg, error) {
+func (p *Protocol) LookupHost(ctx context.Context, req *dns.Msg) *dns.Msg {
 	if p.domain == nil {
-		return &dns.Msg{}, nil
+		return req
 	}
 
 	for _, que := range req.Question {
 		if !p.domain.MatchString(que.Name[:len(que.Name)-1]) {
-			return req, nil
+			return req
 		}
 	}
 
 	for _, addr := range p.dns {
 		dial, err := p.tnet.DialContext(ctx, "udp", addr+":53")
 		if err != nil {
-			return nil, err
+			log.Error().Err(err).Msg("WRG", "failed to handle dns req")
+
+			continue
 		}
 
 		co := new(dns.Conn)
@@ -155,22 +175,26 @@ func (p *Protocol) LookupHost(ctx context.Context, req *dns.Msg) (*dns.Msg, erro
 
 		err = co.WriteMsg(req)
 		if err != nil {
-			return nil, err
+			log.Error().Err(err).Msg("WRG", "failed to handle dns req")
+
+			continue
 		}
 
 		rsp, err := co.ReadMsg()
 		if err != nil {
-			return nil, err
+			log.Error().Err(err).Msg("WRG", "failed to handle dns req")
+
+			continue
 		}
 
 		if len(rsp.Answer) == 0 {
 			continue
 		}
 
-		return rsp, nil
+		return rsp
 	}
 
-	return req, nil
+	return req
 }
 
 func (p *Protocol) HandleTCP(conn net.Conn) {

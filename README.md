@@ -51,11 +51,14 @@ Below is a template for the WARP configuration file, reflecting the current stru
 tunnel:
   name: utun11
   ip: 192.168.127.0
-ssh:
-  user: <USER>
-  password: <PASSWORD>
-  host: <HOST>
-  domain: .*example\.com$
+protocols:
+- ssh:
+    user: <USER>
+    password: <PASSWORD>
+    host: <HOST>
+    domain: .*example\.com$
+    ips:
+    - 10.0.0.0/8
 ```
 
 ## Examples

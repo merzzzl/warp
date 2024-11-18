@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/miekg/dns"
+	"github.com/seancfoley/ipaddress-go/ipaddr"
 	"github.com/xjasonlyu/tun2socks/v2/core"
 	"github.com/xjasonlyu/tun2socks/v2/core/adapter"
 	"github.com/xjasonlyu/tun2socks/v2/core/device/tun"
@@ -45,10 +46,19 @@ type Routes struct {
 }
 
 type Protocol interface {
-	HandleTCP(conn net.Conn)
-	HandleUDP(conn net.Conn)
-	LookupHost(ctx context.Context, req *dns.Msg) (*dns.Msg, error)
+	LookupHost(ctx context.Context, req *dns.Msg) *dns.Msg
+}
+
+type protocolFixedIPs interface {
 	FixedIPs() []string
+}
+
+type protocolHandleUDP interface {
+	HandleUDP(conn net.Conn)
+}
+
+type protocolHandleTCP interface {
+	HandleTCP(conn net.Conn)
 }
 
 type tunTransportHandler struct {
@@ -146,9 +156,11 @@ func (h *tunTransportHandler) handleTCPConn(ctx context.Context, conn adapter.TC
 	}
 
 	if handler := h.routes.get(strings.Split(conn.LocalAddr().String(), ":")[0]); handler != nil {
-		handler.HandleTCP(h.traffic.newConn(conn))
+		if handler, ok := handler.(protocolHandleTCP); ok {
+			handler.HandleTCP(h.traffic.newConn(conn))
 
-		return
+			return
+		}
 	}
 
 	log.Error().Msgf("TUN", "no handler for tcp connection to: %s", conn.LocalAddr())
@@ -165,12 +177,14 @@ func (h *tunTransportHandler) handleUDPConn(ctx context.Context, conn adapter.UD
 	}
 
 	if handler := h.routes.get(strings.Split(conn.LocalAddr().String(), ":")[0]); handler != nil {
-		handler.HandleUDP(h.traffic.newConn(conn))
+		if handler, ok := handler.(protocolHandleUDP); ok {
+			handler.HandleUDP(h.traffic.newConn(conn))
 
-		return
+			return
+		}
 	}
 
-	log.Error().Msgf("TUN", "no handler for tcp connection to: %s", conn.LocalAddr())
+	log.Error().Msgf("TUN", "no handler for udp connection to: %s", conn.LocalAddr())
 }
 
 // GetRoutes returns Routes.
@@ -189,22 +203,48 @@ func (r *Routes) GetAll() []string {
 		list = append(list, route)
 	}
 
+	ips := make([]*ipaddr.IPAddress, 0, len(list))
+
+	for _, ipstr := range list {
+		addr := ipaddr.NewIPAddressString(ipstr)
+		if ip := addr.GetAddress(); ip != nil {
+			ips = append(ips, ip)
+		}
+	}
+
+	ipsv4, ipsv6 := ipaddr.MergeToPrefixBlocks(ips...)
+	ipsv4 = append(ipsv4, ipsv6...)
+
+	list = make([]string, 0, len(ipsv4))
+
+	for _, ip := range ipsv4 {
+		list = append(list, ip.String())
+	}
+
 	return list
 }
 
-func (r *Routes) get(route string) Protocol {
+func (r *Routes) get(route string) any {
 	r.mutex.RLock()
 	defer r.mutex.RUnlock()
 
-	return r.list[route]
+	for k, v := range r.list {
+		if ipaddr.NewIPAddressString(k).Contains(ipaddr.NewIPAddressString(route)) {
+			return v
+		}
+	}
+
+	return nil
 }
 
 func (r *Routes) add(ip string, hand Protocol) {
 	r.mutex.Lock()
 	defer r.mutex.Unlock()
 
-	if _, ok := r.list[ip]; ok {
-		return
+	for k := range r.list {
+		if ipaddr.NewIPAddressString(k).Contains(ipaddr.NewIPAddressString(ip)) {
+			return
+		}
 	}
 
 	if err := sys.AddRoute(ip, r.gateway); err != nil {
@@ -257,8 +297,10 @@ func (t *Service) ListenAndServe(ctx context.Context, protocols []Protocol) erro
 	defer log.Info().Str("host", t.addr+":53").Msg("DNS", "stop dns server")
 
 	for _, protocol := range protocols {
-		for _, ip := range protocol.FixedIPs() {
-			handler.routes.add(ip, protocol)
+		if p, ok := protocol.(protocolFixedIPs); ok {
+			for _, ip := range p.FixedIPs() {
+				handler.routes.add(ip, protocol)
+			}
 		}
 	}
 
@@ -309,14 +351,7 @@ func (h *tunTransportHandler) handleDNS(ctx context.Context, conn net.Conn) {
 		return
 	}
 
-	msg, err = h.serveDNS(ctx, msg)
-	if err != nil {
-		log.Error().Err(err).Msg("DNS", "failed serve msg")
-
-		return
-	}
-
-	b, err = msg.Pack()
+	b, err = h.serveDNS(ctx, msg).Pack()
 	if err != nil {
 		return
 	}
@@ -327,12 +362,9 @@ func (h *tunTransportHandler) handleDNS(ctx context.Context, conn net.Conn) {
 	}
 }
 
-func (h *tunTransportHandler) serveDNS(ctx context.Context, req *dns.Msg) (*dns.Msg, error) {
+func (h *tunTransportHandler) serveDNS(ctx context.Context, req *dns.Msg) *dns.Msg {
 	for _, protocol := range h.protocols {
-		rsp, err := lookupHost(ctx, protocol, req)
-		if err != nil {
-			return nil, err
-		}
+		rsp := protocol.LookupHost(ctx, req)
 
 		if len(rsp.Answer) == 0 {
 			continue
@@ -348,19 +380,10 @@ func (h *tunTransportHandler) serveDNS(ctx context.Context, req *dns.Msg) (*dns.
 			}
 		}
 
-		return rsp, nil
+		return rsp
 	}
 
-	return req, nil
-}
-
-func lookupHost(ctx context.Context, protocol Protocol, req *dns.Msg) (*dns.Msg, error) {
-	rsp, err := protocol.LookupHost(ctx, req)
-	if err != nil {
-		return nil, err
-	}
-
-	return rsp, nil
+	return req
 }
 
 // GetRates returns the rates for in and out traffic.

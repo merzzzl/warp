@@ -2,25 +2,36 @@ package local
 
 import (
 	"context"
-	"net"
 
 	"github.com/miekg/dns"
 
 	"github.com/merzzzl/warp/internal/utils/sys"
 )
 
+type Config struct {
+	DNS []string
+}
+
 type Protocol struct {
 	servers []string
 }
 
-func New() *Protocol {
+func New(cfg *Config) *Protocol {
+	var servers []string
+
+	if len(cfg.DNS) != 0 {
+		servers = cfg.DNS
+	} else {
+		servers = sys.GetOriginalDNS()
+	}
+
 	return &Protocol{
-		servers: sys.GetOriginalDNS(),
+		servers: servers,
 	}
 }
 
 // LookupHost returns a DNS response for the given request and server list.
-func (p *Protocol) LookupHost(ctx context.Context, req *dns.Msg) (*dns.Msg, error) {
+func (p *Protocol) LookupHost(ctx context.Context, req *dns.Msg) *dns.Msg {
 	cli := new(dns.Client)
 
 	for _, s := range p.servers {
@@ -29,14 +40,8 @@ func (p *Protocol) LookupHost(ctx context.Context, req *dns.Msg) (*dns.Msg, erro
 			continue
 		}
 
-		return res, nil
+		return res
 	}
 
-	return req, nil
+	return req
 }
-
-func (Protocol) HandleTCP(net.Conn) {}
-
-func (Protocol) HandleUDP(net.Conn) {}
-
-func (Protocol) FixedIPs() []string { return nil }

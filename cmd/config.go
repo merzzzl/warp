@@ -9,6 +9,7 @@ import (
 
 	"gopkg.in/yaml.v2"
 
+	"github.com/merzzzl/warp/internal/protocol/local"
 	"github.com/merzzzl/warp/internal/protocol/ssh"
 	"github.com/merzzzl/warp/internal/protocol/wg"
 	"github.com/merzzzl/warp/internal/service"
@@ -17,8 +18,9 @@ import (
 var errInvalidConfig = errors.New("invalid config of protocols")
 
 type ConfigProtocol struct {
-	SSH       *ssh.Config `yaml:"ssh"`
-	WireGuard *wg.Config  `yaml:"wireguard"`
+	Local     *local.Config `yaml:"local"`
+	SSH       *ssh.Config   `yaml:"ssh"`
+	WireGuard *wg.Config    `yaml:"wireguard"`
 }
 
 type Config struct {

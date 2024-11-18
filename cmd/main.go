@@ -17,7 +17,7 @@ import (
 )
 
 func main() {
-	runtime.GOMAXPROCS(2)
+	runtime.GOMAXPROCS(1)
 
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -54,8 +54,22 @@ func main() {
 	}
 
 	group := []service.Protocol{}
+	localP := local.New(&local.Config{})
 
+	// INFO: Add more protocols here
+	// protocol must implement:
+	//  required: LookupHost(ctx context.Context, req *dns.Msg) (*dns.Msg, error)
+	//  optional: FixedIPs() []string
+	//  optional: HandleTCP(conn net.Conn)
+	//  optional: HandleUDP(conn net.Conn)
 	for _, pConfig := range cfg.Protocols {
+		// Register Local
+		if pConfig.Local != nil {
+			localP = local.New(pConfig.Local)
+
+			continue
+		}
+
 		// Register SSH
 		if pConfig.SSH != nil {
 			sshR, err := ssh.New(pConfig.SSH)
@@ -79,16 +93,9 @@ func main() {
 
 			continue
 		}
-
-		// INFO: Add more protocols here
-		// protocol must implement:
-		//   FixedIPs() []string
-		//   LookupHost(ctx context.Context, req *dns.Msg) (*dns.Msg, error)
-		//   HandleTCP(conn net.Conn)
-		//   HandleUDP(conn net.Conn)
 	}
 
-	group = append(group, local.New())
+	group = append(group, localP)
 
 	if err := srv.ListenAndServe(ctx, group); err != nil {
 		log.Fatal().Err(err).Msg("APP", "failed to run service")
