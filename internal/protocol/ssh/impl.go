@@ -121,7 +121,6 @@ func (p *Protocol) LookupHost(_ context.Context, req *dns.Msg) *dns.Msg {
 		if err != nil {
 			go p.open()
 
-			dnsConn.Close()
 			log.Error().Err(err).Msg("SSH", "failed to handle dns req")
 
 			continue
@@ -132,7 +131,6 @@ func (p *Protocol) LookupHost(_ context.Context, req *dns.Msg) *dns.Msg {
 
 		err = co.WriteMsg(req)
 		if err != nil {
-			dnsConn.Close()
 			log.Error().Err(err).Msg("SSH", "failed to handle dns req")
 
 			continue
@@ -140,13 +138,10 @@ func (p *Protocol) LookupHost(_ context.Context, req *dns.Msg) *dns.Msg {
 
 		rsp, err := co.ReadMsg()
 		if err != nil {
-			dnsConn.Close()
 			log.Error().Err(err).Msg("SSH", "failed to handle dns req")
 
 			continue
 		}
-
-		dnsConn.Close()
 
 		return rsp
 	}
