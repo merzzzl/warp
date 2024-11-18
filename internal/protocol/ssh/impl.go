@@ -2,9 +2,12 @@ package ssh
 
 import (
 	"context"
+	"errors"
+	"io"
 	"net"
 	"regexp"
 	"strings"
+	"sync"
 
 	"github.com/miekg/dns"
 	"golang.org/x/crypto/ssh"
@@ -29,6 +32,7 @@ type Protocol struct {
 	domain *regexp.Regexp
 	dns    []string
 	ips    []string
+	mx     sync.Mutex
 }
 
 func New(cfg *Config) (*Protocol, error) {
@@ -83,22 +87,38 @@ func New(cfg *Config) (*Protocol, error) {
 	}, nil
 }
 
-func (p *Protocol) open() {
-	if session, err := p.cli.NewSession(); err == nil {
-		_ = session.Close()
+func (p *Protocol) dial(n, addr string) (net.Conn, error) {
+	p.mx.Lock()
+	defer p.mx.Unlock()
 
-		return
+	for i := 0; ; i++ {
+		conn, err := p.cli.Dial(n, addr)
+		if err != nil {
+			if errors.Is(err, io.EOF) && i < 5 {
+				if session, err := p.cli.NewSession(); err == nil {
+					_ = session.Close()
+
+					continue
+				}
+
+				cli, err := ssh.Dial("tcp", p.host+":22", p.config)
+				if err != nil {
+					log.Error().Err(err).Msg("SSH", "failed to open ssh session")
+
+					return nil, err
+				}
+
+				_ = p.cli.Close()
+				p.cli = cli
+
+				continue
+			}
+
+			return nil, err
+		}
+
+		return conn, nil
 	}
-
-	cli, err := ssh.Dial("tcp", p.host+":22", p.config)
-	if err != nil {
-		log.Error().Err(err).Msg("SSH", "failed to open ssh session")
-
-		return
-	}
-
-	_ = p.cli.Close()
-	p.cli = cli
 }
 
 func (p *Protocol) FixedIPs() []string {
@@ -117,10 +137,8 @@ func (p *Protocol) LookupHost(_ context.Context, req *dns.Msg) *dns.Msg {
 	}
 
 	for _, addr := range p.dns {
-		dnsConn, err := p.cli.Dial("tcp", addr+":53")
+		dnsConn, err := p.dial("tcp", addr+":53")
 		if err != nil {
-			go p.open()
-
 			log.Error().Err(err).Msg("SSH", "failed to handle dns req")
 
 			continue
@@ -152,9 +170,8 @@ func (p *Protocol) LookupHost(_ context.Context, req *dns.Msg) *dns.Msg {
 func (p *Protocol) HandleTCP(conn net.Conn) {
 	log.Info().Str("dest", conn.LocalAddr().String()).Str("type", "TCP").Msg("SSH", "handle conn")
 
-	remoteConn, err := p.cli.Dial(conn.LocalAddr().Network(), conn.LocalAddr().String())
+	remoteConn, err := p.dial(conn.LocalAddr().Network(), conn.LocalAddr().String())
 	if err != nil {
-		go p.open()
 		log.Error().Err(err).Msg("SSH", "failed to connect to remote host")
 
 		return
