@@ -375,6 +375,12 @@ func (h *tunTransportHandler) serveDNS(ctx context.Context, req *dns.Msg) *dns.M
 		if _, ok := protocol.(*local.Protocol); !ok {
 			log.Info().DNS(rsp).Msg("DNS", "dns resolved")
 
+			if protocol, ok := protocol.(protocolFixedIPs); ok {
+				if len(protocol.FixedIPs()) > 0 {
+					return rsp
+				}
+			}
+
 			for _, ans := range rsp.Answer {
 				if a, ok := ans.(*dns.A); ok {
 					h.routes.add(a.A.String(), protocol)
