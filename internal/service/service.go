@@ -119,21 +119,23 @@ func newTunTransportHandler(routes *Routes, traffic *Traffic, protocols []Protoc
 }
 
 func (h *tunTransportHandler) run(ctx context.Context) {
-	defer func() {
-		if r := recover(); r != nil {
-			log.Error().Msgf("SYS", "transport panic: %v", r)
-		}
-	}()
-
 	for {
-		select {
-		case conn := <-h.tcpQueue:
-			go h.handleTCPConn(ctx, conn)
-		case conn := <-h.udpQueue:
-			go h.handleUDPConn(ctx, conn)
-		case <-h.closeCh:
-			return
-		}
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					log.Error().Msgf("SYS", "transport panic: %v", r)
+				}
+			}()
+
+			select {
+			case conn := <-h.tcpQueue:
+				go h.handleTCPConn(ctx, conn)
+			case conn := <-h.udpQueue:
+				go h.handleUDPConn(ctx, conn)
+			case <-h.closeCh:
+				return
+			}
+		}()
 	}
 }
 
