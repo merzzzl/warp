@@ -375,6 +375,8 @@ func (h *tunTransportHandler) serveDNS(ctx context.Context, req *dns.Msg) *dns.M
 		rsp := protocol.LookupHost(ctx, req)
 
 		if len(rsp.Answer) == 0 {
+			log.Debug().DNS(rsp).Msg("DNS", "no answer")
+
 			continue
 		}
 
