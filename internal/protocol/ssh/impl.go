@@ -151,6 +151,8 @@ func (p *Protocol) LookupHost(_ context.Context, req *dns.Msg) *dns.Msg {
 	}
 
 	for _, addr := range p.dns {
+		log.Debug().Str("server", addr).Msg("SSH", "handle dns req")
+
 		dnsConn, err := p.dial("tcp", addr+":53")
 		if err != nil {
 			log.Error().Str("server", addr).Err(err).Msg("SSH", "handle dns req")
