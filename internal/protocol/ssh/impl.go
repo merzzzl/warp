@@ -95,7 +95,7 @@ func (p *Protocol) dial(n, addr string) (net.Conn, error) {
 			return conn, err
 		}
 
-		if _, ok := err.(net.Error); !ok {
+		if _, ok := err.(net.Error); ok {
 			return nil, err
 		}
 
