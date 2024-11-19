@@ -62,7 +62,7 @@ func (e *Event) Msg(tag, msg string) {
 		return
 	}
 
-	e.e.Msg("\033[35m" + tag + "\033[0m " + msg)
+	e.e.Msg("\033[35m" + tag + "\033[0m " + fmt.Sprintf("%-16s", msg))
 }
 
 // DNS logs a DNS message.
@@ -119,7 +119,7 @@ func setLoggerOutput(out io.Writer) zerolog.Logger {
 				return ""
 			}
 
-			return fmt.Sprintf("\033[34m%s=\033[0m", str)
+			return fmt.Sprintf("\033[36m%s=\033[0m", str)
 		},
 		FormatFieldValue: func(i any) string {
 			str, ok := i.(string)
@@ -127,7 +127,7 @@ func setLoggerOutput(out io.Writer) zerolog.Logger {
 				return ""
 			}
 
-			return fmt.Sprintf("\033[34m%s\033[0m", str)
+			return fmt.Sprintf("\033[36m%s\033[0m", str)
 		},
 		FormatErrFieldName: func(any) string {
 			return ""
@@ -151,7 +151,7 @@ func setLoggerOutput(out io.Writer) zerolog.Logger {
 				return ""
 			}
 
-			return fmt.Sprintf("\033[36m%s\033[0m", parse.Format("15:04:05"))
+			return fmt.Sprintf("\033[37m%s\033[0m", parse.Format("15:04:05"))
 		},
 	}).Level(level)
 }
