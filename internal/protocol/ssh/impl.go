@@ -153,7 +153,7 @@ func (p *Protocol) LookupHost(_ context.Context, req *dns.Msg) *dns.Msg {
 	for _, addr := range p.dns {
 		dnsConn, err := p.dial("tcp", addr+":53")
 		if err != nil {
-			log.Error().Str("server", addr).Err(err).Msg("SSH", "handle dns req")
+			log.Error().Str("server", addr).DNS(req).Err(err).Msg("SSH", "handle dns req")
 
 			continue
 		}
@@ -163,19 +163,19 @@ func (p *Protocol) LookupHost(_ context.Context, req *dns.Msg) *dns.Msg {
 
 		err = co.WriteMsg(req)
 		if err != nil {
-			log.Error().Str("server", addr).Err(err).Msg("SSH", "write dns req")
+			log.Error().Str("server", addr).DNS(req).Err(err).Msg("SSH", "write dns req")
 
 			continue
 		}
 
 		rsp, err := co.ReadMsg()
 		if err != nil {
-			log.Error().Str("server", addr).Err(err).Msg("SSH", "read dns req")
+			log.Error().Str("server", addr).DNS(req).Err(err).Msg("SSH", "read dns req")
 
 			continue
 		}
 
-		log.Debug().Str("server", addr).Msg("SSH", "handle dns req")
+		log.Debug().Str("server", addr).DNS(req).Msg("SSH", "handle dns req")
 
 		if len(rsp.Answer) == 0 {
 			continue

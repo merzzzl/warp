@@ -38,12 +38,12 @@ func (p *Protocol) LookupHost(ctx context.Context, req *dns.Msg) *dns.Msg {
 	for _, s := range p.servers {
 		res, _, err := cli.ExchangeContext(ctx, req, s+":53")
 		if err != nil {
-			log.Error().Str("server", s).Err(err).Msg("LOC", "handle dns req")
+			log.Error().Str("server", s).DNS(req).Err(err).Msg("LOC", "handle dns req")
 
 			continue
 		}
 
-		log.Debug().Str("server", s).Msg("LOC", "handle dns req")
+		log.Debug().Str("server", s).DNS(req).Msg("LOC", "handle dns req")
 
 		return res
 	}
