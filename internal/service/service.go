@@ -165,7 +165,7 @@ func (h *tunTransportHandler) handleTCPConn(ctx context.Context, conn adapter.TC
 		}
 	}
 
-	log.Error().Msgf("TUN", "no handler for tcp connection to: %s", conn.LocalAddr())
+	log.Warn().Msgf("TUN", "no handler for tcp connection to: %s", conn.LocalAddr())
 }
 
 func (h *tunTransportHandler) handleUDPConn(ctx context.Context, conn adapter.UDPConn) {
@@ -186,7 +186,7 @@ func (h *tunTransportHandler) handleUDPConn(ctx context.Context, conn adapter.UD
 		}
 	}
 
-	log.Error().Msgf("TUN", "no handler for udp connection to: %s", conn.LocalAddr())
+	log.Warn().Msgf("TUN", "no handler for udp connection to: %s", conn.LocalAddr())
 }
 
 // GetRoutes returns Routes.
@@ -245,19 +245,21 @@ func (r *Routes) add(ip string, hand Protocol) {
 
 	for k := range r.list {
 		if ipaddr.NewIPAddressString(k).Contains(ipaddr.NewIPAddressString(ip)) {
+			log.Debug().Str("ip", ip).Str("exists", k).Msg("TUN", "add route")
+
 			return
 		}
 	}
 
 	if err := sys.AddRoute(ip, r.gateway); err != nil {
-		log.Error().Err(err).Str("ip", ip).Msg("TUN", "failed to add route")
+		log.Error().Err(err).Str("ip", ip).Msg("TUN", "add route")
 
 		return
 	}
 
 	r.list[ip] = hand
 
-	log.Info().Str("ip", ip).Msg("TUN", "route added")
+	log.Info().Str("ip", ip).Msg("TUN", "add route")
 }
 
 // ListenAndServe listens on the given address and serves DNS requests using the provided resolvers.
@@ -309,19 +311,19 @@ func (t *Service) ListenAndServe(ctx context.Context, protocols []Protocol) erro
 	<-ctx.Done()
 
 	if err := sys.DeleteTun(t.name); err != nil {
-		log.Error().Err(err).Msg("TUN", "failed to delete tun")
+		log.Error().Err(err).Msg("TUN", "delete tun")
 	}
 
 	coreStack.Close()
 
 	if err := dev.Close(); err != nil {
-		log.Error().Err(err).Msg("TUN", "failed to close device")
+		log.Error().Err(err).Msg("TUN", "close device")
 	}
 
 	handler.finish()
 
 	if err := sys.RestoreDNS(); err != nil {
-		log.Error().Err(err).Msg("DNS", "failed to restore dns")
+		log.Error().Err(err).Msg("DNS", "restore dns")
 	}
 
 	return nil
@@ -337,7 +339,7 @@ func (h *tunTransportHandler) handleDNS(ctx context.Context, conn net.Conn) {
 
 	n, err := conn.Read(b)
 	if err != nil {
-		log.Error().Err(err).Msg("DNS", "failed read msg")
+		log.Warn().Err(err).Msg("DNS", "read msg")
 
 		return
 	}
@@ -348,18 +350,22 @@ func (h *tunTransportHandler) handleDNS(ctx context.Context, conn net.Conn) {
 
 	err = msg.Unpack(b)
 	if err != nil {
-		log.Error().Err(err).Msg("DNS", "failed unpack msg")
+		log.Warn().Err(err).Msg("DNS", "unpack msg")
 
 		return
 	}
 
 	b, err = h.serveDNS(ctx, msg).Pack()
 	if err != nil {
+		log.Debug().Err(err).Msg("DNS", "serve dns")
+
 		return
 	}
 
 	_, err = conn.Write(b)
 	if err != nil {
+		log.Warn().Err(err).Msg("DNS", "write dns")
+
 		return
 	}
 }
@@ -373,10 +379,12 @@ func (h *tunTransportHandler) serveDNS(ctx context.Context, req *dns.Msg) *dns.M
 		}
 
 		if _, ok := protocol.(*local.Protocol); !ok {
-			log.Info().DNS(rsp).Msg("DNS", "dns resolved")
+			log.Info().DNS(rsp).Msg("DNS", "resolve host")
 
 			if protocol, ok := protocol.(protocolFixedIPs); ok {
 				if len(protocol.FixedIPs()) > 0 {
+					log.Debug().DNS(rsp).Msg("DNS", "use fixed ips")
+
 					return rsp
 				}
 			}
@@ -386,6 +394,8 @@ func (h *tunTransportHandler) serveDNS(ctx context.Context, req *dns.Msg) *dns.M
 					h.routes.add(a.A.String(), protocol)
 				}
 			}
+		} else {
+			log.Debug().DNS(rsp).Msg("DNS", "local route")
 		}
 
 		return rsp

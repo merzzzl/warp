@@ -5,6 +5,7 @@ import (
 
 	"github.com/miekg/dns"
 
+	"github.com/merzzzl/warp/internal/utils/log"
 	"github.com/merzzzl/warp/internal/utils/sys"
 )
 
@@ -35,6 +36,8 @@ func (p *Protocol) LookupHost(ctx context.Context, req *dns.Msg) *dns.Msg {
 	cli := new(dns.Client)
 
 	for _, s := range p.servers {
+		log.Debug().Str("server", s).Msg("LOC", "handle dns req")
+
 		res, _, err := cli.ExchangeContext(ctx, req, s+":53")
 		if err != nil {
 			continue

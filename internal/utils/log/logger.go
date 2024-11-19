@@ -12,7 +12,10 @@ import (
 	zlog "github.com/rs/zerolog/log"
 )
 
-var l = setLoggerOutput(os.Stdout)
+var (
+	l     = setLoggerOutput(os.Stdout)
+	level = zerolog.InfoLevel
+)
 
 type Event struct {
 	e *zerolog.Event
@@ -26,6 +29,11 @@ func Debug() *Event {
 // Info logs a message at info level.
 func Info() *Event {
 	return &Event{l.Info()}
+}
+
+// Info logs a message at info level.
+func Warn() *Event {
+	return &Event{l.Warn()}
 }
 
 // Error logs a message at error level.
@@ -98,6 +106,10 @@ func SetOutput(out io.Writer) {
 	l = setLoggerOutput(out)
 }
 
+func EnableDebug() {
+	level = zerolog.DebugLevel
+}
+
 func setLoggerOutput(out io.Writer) zerolog.Logger {
 	return zlog.Output(zerolog.ConsoleWriter{
 		Out: out,
@@ -141,5 +153,5 @@ func setLoggerOutput(out io.Writer) zerolog.Logger {
 
 			return fmt.Sprintf("\033[36m%s\033[0m", parse.Format("15:04:05"))
 		},
-	}).Level(zerolog.InfoLevel)
+	}).Level(level)
 }

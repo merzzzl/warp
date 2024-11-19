@@ -26,6 +26,10 @@ func main() {
 		log.Fatal().Err(err).Msg("APP", "failed on load config")
 	}
 
+	if cfg.debug {
+		log.EnableDebug()
+	}
+
 	srv, err := service.New(cfg.Tunnel)
 	if err != nil {
 		log.Fatal().Err(err).Msg("APP", "failed create tunnel")

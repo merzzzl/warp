@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/netip"
 	"regexp"
+	"strconv"
 
 	"github.com/MakeNowJust/heredoc"
 	"github.com/miekg/dns"
@@ -86,6 +87,8 @@ func New(ctx context.Context, cfg *Config) (*Protocol, error) {
 		dnss = append(dnss, addr)
 	}
 
+	log.Debug().Str("ip", localAddress.String()).Str("mtu", strconv.Itoa(defaultMTU)).Msg("WRG", "create tun")
+
 	tun, tnet, err := netstack.CreateNetTUN([]netip.Addr{localAddress}, dnss, defaultMTU)
 	if err != nil {
 		return nil, err
@@ -100,12 +103,16 @@ func New(ctx context.Context, cfg *Config) (*Protocol, error) {
 		},
 	}
 
+	log.Debug().Str("ip", localAddress.String()).Str("mtu", strconv.Itoa(defaultMTU)).Msg("WRG", "create device")
+
 	dev := device.NewDevice(tun, wgconn.NewDefaultBind(), &wglog)
 
 	err = dev.IpcSet(request.String())
 	if err != nil {
 		return nil, err
 	}
+
+	log.Debug().Str("ip", localAddress.String()).Str("mtu", strconv.Itoa(defaultMTU)).Msg("WRG", "up device")
 
 	err = dev.Up()
 	if err != nil {
@@ -158,6 +165,8 @@ func (p *Protocol) LookupHost(ctx context.Context, req *dns.Msg) *dns.Msg {
 
 	for _, que := range req.Question {
 		if !p.domain.MatchString(que.Name[:len(que.Name)-1]) {
+			log.Debug().Str("question", que.Name).Str("regex", p.domain.String()).Msg("WRG", "does not match")
+
 			return req
 		}
 	}
@@ -198,27 +207,27 @@ func (p *Protocol) LookupHost(ctx context.Context, req *dns.Msg) *dns.Msg {
 }
 
 func (p *Protocol) HandleTCP(conn net.Conn) {
-	log.Info().Str("dest", conn.LocalAddr().String()).Str("type", "TCP").Msg("WRG", "handle conn")
-
 	remoteConn, err := p.tnet.Dial(conn.LocalAddr().Network(), conn.LocalAddr().String())
 	if err != nil {
-		log.Error().Err(err).Msg("WRG", "failed to connect to remote host")
+		log.Error().Err(err).Str("dest", conn.LocalAddr().String()).Str("type", conn.LocalAddr().Network()).Msg("WRG", "handle conn")
 
 		return
 	}
+
+	log.Info().Str("dest", conn.LocalAddr().String()).Str("type", conn.LocalAddr().Network()).Msg("WRG", "handle conn")
 
 	network.Transfer("WRG", conn, remoteConn)
 }
 
 func (p *Protocol) HandleUDP(conn net.Conn) {
-	log.Info().Str("dest", conn.LocalAddr().String()).Str("type", "UDP").Msg("WRG", "handle conn")
-
 	remoteConn, err := p.tnet.Dial(conn.LocalAddr().Network(), conn.LocalAddr().String())
 	if err != nil {
-		log.Error().Err(err).Msg("WRG", "failed to connect to remote host")
+		log.Error().Err(err).Str("dest", conn.LocalAddr().String()).Str("type", conn.LocalAddr().Network()).Msg("WRG", "handle conn")
 
 		return
 	}
+
+	log.Info().Str("dest", conn.LocalAddr().String()).Str("type", conn.LocalAddr().Network()).Msg("WRG", "handle conn")
 
 	network.Transfer("WRG", conn, remoteConn)
 }

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -44,6 +45,8 @@ func New(cfg *Config) (*Protocol, error) {
 		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
 	}
 
+	log.Debug().Str("url", fmt.Sprintf("%s@%s", sshConfig.User, cfg.Host)).Msg("SSH", "open connection")
+
 	cli, err := ssh.Dial("tcp", cfg.Host+":22", sshConfig)
 	if err != nil {
 		return nil, err
@@ -54,6 +57,8 @@ func New(cfg *Config) (*Protocol, error) {
 	if len(cfg.DNS) != 0 {
 		dnsList = cfg.DNS
 	} else {
+		log.Debug().Str("url", fmt.Sprintf("%s@%s", sshConfig.User, cfg.Host)).Msg("SSH", "get dns servers")
+
 		session, err := cli.NewSession()
 		if err != nil {
 			return nil, err
@@ -91,6 +96,8 @@ func New(cfg *Config) (*Protocol, error) {
 
 func (p *Protocol) dial(n, addr string) (net.Conn, error) {
 	for i := 0; ; i++ {
+		log.Debug().Str("attempt", strconv.Itoa(i)).Str("dest", addr).Str("type", n).Msg("SSH", "open dial")
+
 		conn, err := p.cli.Dial(n, addr)
 		if err == nil || i == 2 {
 			return conn, err
@@ -100,7 +107,7 @@ func (p *Protocol) dial(n, addr string) (net.Conn, error) {
 			return nil, err
 		}
 
-		log.Info().Str("url", fmt.Sprintf("%s@%s", p.config.User, p.host)).Msg("SSH", "try to reopen connection")
+		log.Warn().Str("url", fmt.Sprintf("%s@%s", p.config.User, p.host)).Msg("SSH", "reopen connection")
 
 		if !p.mx.TryLock() {
 			time.Sleep(1 * time.Second)
@@ -137,6 +144,8 @@ func (p *Protocol) LookupHost(_ context.Context, req *dns.Msg) *dns.Msg {
 
 	for _, que := range req.Question {
 		if !p.domain.MatchString(que.Name[:len(que.Name)-1]) {
+			log.Debug().Str("question", que.Name).Str("regex", p.domain.String()).Msg("SSH", "does not match")
+
 			return req
 		}
 	}
@@ -144,7 +153,7 @@ func (p *Protocol) LookupHost(_ context.Context, req *dns.Msg) *dns.Msg {
 	for _, addr := range p.dns {
 		dnsConn, err := p.dial("tcp", addr+":53")
 		if err != nil {
-			log.Error().Err(err).Msg("SSH", "failed to handle dns req")
+			log.Error().Str("server", addr).Err(err).Msg("SSH", "handle dns req")
 
 			continue
 		}
@@ -154,14 +163,14 @@ func (p *Protocol) LookupHost(_ context.Context, req *dns.Msg) *dns.Msg {
 
 		err = co.WriteMsg(req)
 		if err != nil {
-			log.Error().Err(err).Msg("SSH", "failed to handle dns req")
+			log.Error().Str("server", addr).Err(err).Msg("SSH", "write dns req")
 
 			continue
 		}
 
 		rsp, err := co.ReadMsg()
 		if err != nil {
-			log.Error().Err(err).Msg("SSH", "failed to handle dns req")
+			log.Error().Str("server", addr).Err(err).Msg("SSH", "read dns req")
 
 			continue
 		}
@@ -173,14 +182,14 @@ func (p *Protocol) LookupHost(_ context.Context, req *dns.Msg) *dns.Msg {
 }
 
 func (p *Protocol) HandleTCP(conn net.Conn) {
-	log.Info().Str("dest", conn.LocalAddr().String()).Str("type", "TCP").Msg("SSH", "handle conn")
-
 	remoteConn, err := p.dial(conn.LocalAddr().Network(), conn.LocalAddr().String())
 	if err != nil {
-		log.Error().Err(err).Msg("SSH", "failed to connect to remote host")
+		log.Warn().Str("dest", conn.LocalAddr().String()).Str("type", conn.LocalAddr().Network()).Err(err).Msg("SSH", "handle conn")
 
 		return
 	}
+
+	log.Info().Str("dest", conn.LocalAddr().String()).Str("type", conn.LocalAddr().Network()).Msg("SSH", "handle conn")
 
 	network.Transfer("SSH", conn, remoteConn)
 }

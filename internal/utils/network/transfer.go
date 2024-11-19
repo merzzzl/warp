@@ -21,7 +21,7 @@ func Transfer(tag string, conn1, conn2 net.Conn) {
 		_, err := io.Copy(conn1, conn2)
 		if err != nil && !errors.Is(err, io.EOF) {
 			if _, ok := err.(net.Error); !ok {
-				log.Error().Err(err).Msg(tag, "failed to read data")
+				log.Warn().Err(err).Msg(tag, "failed to read data")
 			}
 		}
 	}()
@@ -33,7 +33,7 @@ func Transfer(tag string, conn1, conn2 net.Conn) {
 		_, err := io.Copy(conn2, conn1)
 		if err != nil && !errors.Is(err, io.EOF) {
 			if _, ok := err.(net.Error); !ok {
-				log.Error().Err(err).Msg(tag, "failed to write data")
+				log.Warn().Err(err).Msg(tag, "failed to write data")
 			}
 		}
 	}()

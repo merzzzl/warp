@@ -27,6 +27,7 @@ type Config struct {
 	Tunnel    *service.Config  `yaml:"tunnel"`
 	Protocols []ConfigProtocol `yaml:"protocols"`
 	verbose   bool
+	debug     bool
 }
 
 func loadConfig() (*Config, error) {
@@ -40,6 +41,7 @@ func loadConfig() (*Config, error) {
 	}
 
 	flag.BoolVar(&cfg.verbose, "verbose", false, "enable verbose logging (default: disabled)")
+	flag.BoolVar(&cfg.debug, "debug", false, "enable debug logging (default: disabled)")
 	flag.Parse()
 
 	file, err := os.ReadFile(usr.HomeDir + "/" + ".warp.yaml")
