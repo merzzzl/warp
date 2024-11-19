@@ -2,12 +2,11 @@ package ssh
 
 import (
 	"context"
-	"errors"
-	"io"
 	"net"
 	"regexp"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/miekg/dns"
 	"golang.org/x/crypto/ssh"
@@ -59,6 +58,8 @@ func New(cfg *Config) (*Protocol, error) {
 			return nil, err
 		}
 
+		defer session.Close()
+
 		sshDNS, err := session.CombinedOutput("scutil --dns | grep \"nameserver\\[.\\]\" | awk '{print $3}' | head -n 1")
 		if err != nil {
 			return nil, err
@@ -88,36 +89,39 @@ func New(cfg *Config) (*Protocol, error) {
 }
 
 func (p *Protocol) dial(n, addr string) (net.Conn, error) {
-	p.mx.Lock()
-	defer p.mx.Unlock()
-
 	for i := 0; ; i++ {
 		conn, err := p.cli.Dial(n, addr)
+		if err == nil || i == 2 {
+			return conn, err
+		}
+
+		if _, ok := err.(net.Error); !ok {
+			return nil, err
+		}
+
+		log.Info().Msg("SSH", "try to reopen connection")
+
+		if !p.mx.TryLock() {
+			time.Sleep(1 * time.Second)
+
+			continue
+		}
+
+		cli, err := ssh.Dial("tcp", p.host+":22", p.config)
 		if err != nil {
-			if errors.Is(err, io.EOF) && i < 5 {
-				if session, err := p.cli.NewSession(); err == nil {
-					_ = session.Close()
+			log.Error().Err(err).Msg("SSH", "failed to open ssh session")
 
-					continue
-				}
-
-				cli, err := ssh.Dial("tcp", p.host+":22", p.config)
-				if err != nil {
-					log.Error().Err(err).Msg("SSH", "failed to open ssh session")
-
-					return nil, err
-				}
-
-				_ = p.cli.Close()
-				p.cli = cli
-
-				continue
-			}
+			p.mx.Unlock()
 
 			return nil, err
 		}
 
-		return conn, nil
+		_ = p.cli.Close()
+		p.cli = cli
+
+		p.mx.Unlock()
+
+		time.Sleep(1 * time.Second)
 	}
 }
 
