@@ -172,8 +172,6 @@ func (p *Protocol) LookupHost(ctx context.Context, req *dns.Msg) *dns.Msg {
 	}
 
 	for _, addr := range p.dns {
-		log.Debug().Str("server", addr).Msg("WRG", "handle dns req")
-
 		dial, err := p.tnet.DialContext(ctx, "udp", addr+":53")
 		if err != nil {
 			log.Error().Err(err).Msg("WRG", "failed to handle dns req")
@@ -197,6 +195,8 @@ func (p *Protocol) LookupHost(ctx context.Context, req *dns.Msg) *dns.Msg {
 
 			continue
 		}
+
+		log.Debug().Str("server", addr).Msg("WRG", "handle dns req")
 
 		if len(rsp.Answer) == 0 {
 			continue
