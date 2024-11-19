@@ -108,6 +108,8 @@ func SetOutput(out io.Writer) {
 
 func EnableDebug() {
 	level = zerolog.DebugLevel
+
+	SetOutput(os.Stdout)
 }
 
 func setLoggerOutput(out io.Writer) zerolog.Logger {
