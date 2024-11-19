@@ -2,6 +2,7 @@ package ssh
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"regexp"
 	"strings"
@@ -99,7 +100,7 @@ func (p *Protocol) dial(n, addr string) (net.Conn, error) {
 			return nil, err
 		}
 
-		log.Info().Msg("SSH", "try to reopen connection")
+		log.Info().Str("url", fmt.Sprintf("%s@%s", p.config.User, p.host)).Msg("SSH", "try to reopen connection")
 
 		if !p.mx.TryLock() {
 			time.Sleep(1 * time.Second)
