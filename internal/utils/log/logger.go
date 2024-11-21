@@ -62,7 +62,7 @@ func (e *Event) Msg(tag, msg string) {
 		return
 	}
 
-	e.e.Msg("\033[35m" + tag + "\033[0m " + fmt.Sprintf("%-16s", msg))
+	e.e.Msg(Colorize(tag, 14) + " " + msg)
 }
 
 // DNS logs a DNS message.
@@ -121,7 +121,7 @@ func setLoggerOutput(out io.Writer) zerolog.Logger {
 				return ""
 			}
 
-			return fmt.Sprintf("\033[36m%s=\033[0m", str)
+			return Colorize(str, 6)
 		},
 		FormatFieldValue: func(i any) string {
 			str, ok := i.(string)
@@ -129,7 +129,7 @@ func setLoggerOutput(out io.Writer) zerolog.Logger {
 				return ""
 			}
 
-			return fmt.Sprintf("\033[36m%s\033[0m", str)
+			return Colorize(str, 6)
 		},
 		FormatErrFieldName: func(any) string {
 			return ""
@@ -140,8 +140,9 @@ func setLoggerOutput(out io.Writer) zerolog.Logger {
 				return ""
 			}
 
-			return fmt.Sprintf("\033[31m(%s)\033[0m", str)
+			return Colorize(str, 1)
 		},
+		FormatLevel: consoleDefaultFormatLevel(),
 		FormatTimestamp: func(i any) string {
 			str, ok := i.(string)
 			if !ok {
@@ -153,7 +154,46 @@ func setLoggerOutput(out io.Writer) zerolog.Logger {
 				return ""
 			}
 
-			return fmt.Sprintf("\033[37m%s\033[0m", parse.Format("15:04:05"))
+			return Colorize(parse.Format("15:04:05"), 7)
 		},
 	}).Level(level)
+}
+
+func consoleDefaultFormatLevel() zerolog.Formatter {
+	return func(i any) string {
+		var l string
+
+		if ll, ok := i.(string); ok {
+			switch ll {
+			case zerolog.LevelTraceValue:
+				l = Colorize("TRC", 10)
+			case zerolog.LevelDebugValue:
+				l = Colorize("DBG", 10)
+			case zerolog.LevelInfoValue:
+				l = Colorize("INF", 10)
+			case zerolog.LevelWarnValue:
+				l = Colorize("WRN", 11)
+			case zerolog.LevelErrorValue:
+				l = Colorize("ERR", 9)
+			case zerolog.LevelFatalValue:
+				l = Colorize("FTL", 9)
+			case zerolog.LevelPanicValue:
+				l = Colorize("PNC", 9)
+			default:
+				l = Colorize(ll, 11)
+			}
+		} else {
+			if i == nil {
+				l = Colorize("???", 11)
+			} else {
+				l = Colorize(strings.ToUpper(fmt.Sprintf("%s", i))[:3], 11)
+			}
+		}
+
+		return l
+	}
+}
+
+func Colorize(s string, c int) string {
+	return fmt.Sprintf("\033[38;5;%dm%s\033[0m", c, s)
 }

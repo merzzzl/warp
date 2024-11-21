@@ -39,7 +39,7 @@ func main() {
 		go func() {
 			defer cancel()
 
-			if err := tui.CreateTUI(srv.GetRoutes(), srv.GetTraffic()); err != nil {
+			if err := tui.CreateTUI(srv.GetRoutes(), srv.GetTraffic(), cfg.fun); err != nil {
 				log.Error().Err(err).Msg("APP", "failed on create tui")
 			}
 		}()
