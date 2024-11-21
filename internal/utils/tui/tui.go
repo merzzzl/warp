@@ -7,7 +7,6 @@ import (
 	"sort"
 	"strings"
 	"time"
-	"unicode/utf8"
 
 	"github.com/jroimartin/gocui"
 
@@ -68,7 +67,7 @@ func CreateTUI(routes *service.Routes, traffic *service.Traffic, useFun bool) er
 func layout(g *gocui.Gui, routes *service.Routes, traffic *service.Traffic, logs <-chan string) error {
 	maxX, maxY := g.Size()
 
-	if v, err := g.SetView("logs", 0, 0, maxX-21, maxY-21); err != nil {
+	if v, err := g.SetView("logs", 0, 0, maxX-21, maxY-16); err != nil {
 		if !errors.Is(err, gocui.ErrUnknownView) {
 			return err
 		}
@@ -97,7 +96,7 @@ func layout(g *gocui.Gui, routes *service.Routes, traffic *service.Traffic, logs
 		}()
 	}
 
-	if v, err := g.SetView("pipes", 0, maxY-20, maxX-21, maxY-1); err != nil {
+	if v, err := g.SetView("pipes", 0, maxY-15, maxX-21, maxY-1); err != nil {
 		if !errors.Is(err, gocui.ErrUnknownView) {
 			return err
 		}
@@ -222,23 +221,17 @@ func fColor() func() int {
 }
 
 func fArt() string {
-	n := rand.Intn(100)
-
-	if n < 99 {
-		return ""
-	}
-
 	ts := []string{
-		"⊂(◉‿◉)つ",
-		"( ✜︵✜ )",
-		"ʕっ•ᴥ•ʔっ",
-		"(｡◕‿‿◕｡)",
-		"(っ´ω`c)♡",
-		"(ʘ‿ʘ)╯",
+		"⊂(◉‿◉)つ──",
+		"( ✜︵ ✜ )─",
+		"ʕっ •ᴥ•ʔっ─",
+		"(｡◕‿‿◕｡)─",
+		"(っ ´ω`c)♡",
+		"(ʘ‿ʘ)╯────",
 	}
 	art := ts[rand.Intn(6)]
 
-	return fmt.Sprintf("─%s%s", art, strings.Repeat("─", 10-utf8.RuneCountInString(art)))
+	return fmt.Sprintf("─%s─", art)
 }
 
 func fun(g *gocui.Gui) {
@@ -251,7 +244,7 @@ func fun(g *gocui.Gui) {
 
 	v.Frame = false
 
-	fmt.Fprint(v, strings.Repeat("─", 12))
+	fmt.Fprint(v, fArt())
 
 	for range time.NewTicker(time.Millisecond * 75).C {
 		fgc := cl() + 1
@@ -260,12 +253,6 @@ func fun(g *gocui.Gui) {
 
 		if _, err := g.View("fun"); err == nil {
 			v.FgColor = gocui.Attribute(fgc)
-
-			if s := fArt(); s != "" {
-				v.Clear()
-
-				fmt.Fprint(v, s)
-			}
 		}
 
 		if v, err := g.View("ips"); err == nil {
