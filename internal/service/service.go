@@ -416,8 +416,8 @@ func (t *Traffic) GetRates() (float64, float64) {
 
 	t.tarificationMutex.Unlock()
 
-	inRate := float64(in*8) / sec
-	outRate := float64(out*8) / sec
+	inRate := float64(in) / sec
+	outRate := float64(out) / sec
 
 	return inRate, outRate
 }

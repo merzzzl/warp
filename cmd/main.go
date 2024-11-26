@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
-	"runtime"
 	"syscall"
 
 	"github.com/merzzzl/warp/internal/protocol/local"
@@ -17,8 +16,6 @@ import (
 )
 
 func main() {
-	runtime.GOMAXPROCS(1)
-
 	ctx, cancel := context.WithCancel(context.Background())
 
 	cfg, err := loadConfig()

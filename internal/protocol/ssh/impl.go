@@ -43,6 +43,7 @@ func New(cfg *Config) (*Protocol, error) {
 			ssh.Password(cfg.Password),
 		},
 		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+		Timeout:         time.Second * 5,
 	}
 
 	log.Debug().Str("url", fmt.Sprintf("%s@%s", sshConfig.User, cfg.Host)).Msg("SSH", "open connection")
@@ -107,7 +108,7 @@ func (p *Protocol) dial(n, addr string) (net.Conn, error) {
 			return nil, err
 		}
 
-		log.Warn().Str("url", fmt.Sprintf("%s@%s", p.config.User, p.host)).Msg("SSH", "reopen connection")
+		log.Warn().Str("dest", addr).Str("type", n).Str("url", fmt.Sprintf("%s@%s", p.config.User, p.host)).Err(err).Msg("SSH", "reopen connection")
 
 		if !p.mx.TryLock() {
 			time.Sleep(1 * time.Second)

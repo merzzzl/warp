@@ -104,15 +104,23 @@ func layout(g *gocui.Gui, routes *service.Routes, traffic *service.Traffic, logs
 		v.Title = "Pipes"
 
 		go func() {
-			for range time.NewTicker(time.Millisecond * 100).C {
+			for range time.NewTicker(time.Millisecond * 250).C {
 				g.Update(func(*gocui.Gui) error {
 					v.Clear()
 
-					for _, pipe := range network.List() {
+					list := network.List()
+
+					sort.Slice(list, func(i, j int) bool {
+						return list[i].OpenAt().Before(list[j].OpenAt())
+					})
+
+					for _, pipe := range list {
 						slen := 22 - len(pipe.From())
 						open := time.Unix(0, 0).UTC().Add(time.Since(pipe.OpenAt())).Format("15:04:05")
+						tx, rx := pipe.TxRx()
+						rate := fmt.Sprintf("%d/%d", tx, rx)
 
-						fmt.Fprintf(v, "%s %s %s %s %s %s\n", log.Colorize(open, 7), log.Colorize(strings.ToUpper(pipe.Tag()), 11), pipe.From(), log.Colorize(strings.Repeat("»", slen), 6), log.Colorize(strings.ToUpper(pipe.Network()), 11), pipe.To())
+						fmt.Fprintf(v, "%s %s %s %s %s %-21s %s\n", log.Colorize(open, 7), log.Colorize(strings.ToUpper(pipe.Tag()), 11), pipe.From(), log.Colorize(strings.Repeat("»", slen), 6), log.Colorize(strings.ToUpper(pipe.Network()), 11), pipe.To(), log.Colorize(rate, 7))
 					}
 
 					return nil
@@ -136,9 +144,9 @@ func layout(g *gocui.Gui, routes *service.Routes, traffic *service.Traffic, logs
 					in, out := traffic.GetRates()
 					sin, sout := traffic.GetTransferred()
 
-					fmt.Fprintf(v, "In:  %.2f Kb/s\n", in/1024)
+					fmt.Fprintf(v, "In:  %s/s\n", byteToSI(in))
 					fmt.Fprintf(v, "     %s\n", log.Colorize(byteToSI(sin), 7))
-					fmt.Fprintf(v, "Out: %.2f Kb/s\n", out/1024)
+					fmt.Fprintf(v, "Out: %s/s\n", byteToSI(out))
 					fmt.Fprintf(v, "     %s\n", log.Colorize(byteToSI(sout), 7))
 
 					return nil

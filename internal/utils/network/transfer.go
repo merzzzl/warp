@@ -1,11 +1,10 @@
 package network
 
 import (
-	"errors"
 	"io"
 	"net"
-	"sort"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/merzzzl/warp/internal/utils/log"
@@ -15,27 +14,28 @@ type Pipe struct {
 	addr1  net.Addr
 	addr2  net.Addr
 	openAt time.Time
+	rx     atomic.Uint32
+	tx     atomic.Uint32
 	tag    string
 }
 
-var openPipes = make(map[Pipe]struct{}, 100)
-
-var mutex sync.RWMutex
+var openPipes = sync.Map{}
 
 func Transfer(tag string, conn1, conn2 net.Conn) {
 	var wg sync.WaitGroup
 
 	wg.Add(2)
 
-	end := open(tag, conn1.LocalAddr(), conn1.RemoteAddr())
+	pipe, end := open(tag, conn1.LocalAddr(), conn1.RemoteAddr())
 	defer end()
 
 	go func() {
 		defer wg.Done()
+		defer conn1.Close()
 		defer conn2.Close()
 
-		_, err := io.Copy(conn1, conn2)
-		if err != nil && !errors.Is(err, io.EOF) {
+		err := universalCopy(&pipe.tx, conn1, conn2)
+		if err != nil {
 			if _, ok := err.(net.Error); !ok {
 				log.Warn().Err(err).Msg(tag, "failed to read data")
 			}
@@ -44,10 +44,11 @@ func Transfer(tag string, conn1, conn2 net.Conn) {
 
 	go func() {
 		defer wg.Done()
+		defer conn2.Close()
 		defer conn1.Close()
 
-		_, err := io.Copy(conn2, conn1)
-		if err != nil && !errors.Is(err, io.EOF) {
+		err := universalCopy(&pipe.rx, conn2, conn1)
+		if err != nil {
 			if _, ok := err.(net.Error); !ok {
 				log.Warn().Err(err).Msg(tag, "failed to write data")
 			}
@@ -57,10 +58,7 @@ func Transfer(tag string, conn1, conn2 net.Conn) {
 	wg.Wait()
 }
 
-func open(tag string, addr1, addr2 net.Addr) func() {
-	mutex.Lock()
-	defer mutex.Unlock()
-
+func open(tag string, addr1, addr2 net.Addr) (*Pipe, func()) {
 	p := Pipe{
 		tag:    tag,
 		addr1:  addr1,
@@ -68,28 +66,20 @@ func open(tag string, addr1, addr2 net.Addr) func() {
 		openAt: time.Now(),
 	}
 
-	openPipes[p] = struct{}{}
+	openPipes.Store(&p, struct{}{})
 
-	return func() {
-		mutex.Lock()
-		defer mutex.Unlock()
-
-		delete(openPipes, p)
+	return &p, func() {
+		openPipes.Delete(&p)
 	}
 }
 
-func List() []Pipe {
-	mutex.RLock()
-	defer mutex.RUnlock()
+func List() []*Pipe {
+	list := make([]*Pipe, 0, 0)
 
-	list := make([]Pipe, 0, len(openPipes))
+	openPipes.Range(func(k, _ any) bool {
+		list = append(list, k.(*Pipe))
 
-	for k := range openPipes {
-		list = append(list, k)
-	}
-
-	sort.Slice(list, func(i, j int) bool {
-		return list[i].openAt.Before(list[j].openAt)
+		return true
 	})
 
 	return list
@@ -113,4 +103,28 @@ func (p *Pipe) To() string {
 
 func (p *Pipe) OpenAt() time.Time {
 	return p.openAt
+}
+
+func (p *Pipe) TxRx() (uint32, uint32) {
+	return p.tx.Load(), p.rx.Load()
+}
+
+func universalCopy(txrx *atomic.Uint32, conn1, conn2 net.Conn) error {
+	buf := make([]byte, 4096)
+	for {
+		n, err := conn1.Read(buf)
+		if err != nil {
+			if err == io.EOF {
+				return nil
+			}
+			return err
+		}
+
+		_, writeErr := conn2.Write(buf[:n])
+		if writeErr != nil {
+			return writeErr
+		}
+
+		txrx.Add(1)
+	}
 }

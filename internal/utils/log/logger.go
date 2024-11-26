@@ -121,7 +121,7 @@ func setLoggerOutput(out io.Writer) zerolog.Logger {
 				return ""
 			}
 
-			return Colorize(str, 6)
+			return Colorize(str+"=", 6)
 		},
 		FormatFieldValue: func(i any) string {
 			str, ok := i.(string)
