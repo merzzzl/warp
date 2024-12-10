@@ -10,7 +10,7 @@ import (
 )
 
 type Config struct {
-	DNS []string
+	DNS []string `yaml:"dns"`
 }
 
 type Protocol struct {
