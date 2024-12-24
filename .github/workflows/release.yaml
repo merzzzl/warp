@@ -44,11 +44,12 @@ jobs:
       - name: Download artifacts
         uses: actions/download-artifact@v4
         with:
+          path: ./artifacts
           pattern: warp-*
       - uses: ncipollo/release-action@v1
         with:
           name: Release ${{ github.ref_name }}
           tag: ${{ github.ref_name }}
-          artifacts: "warp/*"
+          artifacts: "artifacts/warp-*"
           body: "Automated release for tag ${{ github.ref_name }}."
 
