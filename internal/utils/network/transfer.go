@@ -27,12 +27,13 @@ func Transfer(tag string, conn1, conn2 net.Conn) {
 	wg.Add(2)
 
 	pipe, end := open(tag, conn1.LocalAddr(), conn1.RemoteAddr())
+
 	defer end()
+	defer conn2.Close()
+	defer conn1.Close()
 
 	go func() {
 		defer wg.Done()
-		defer conn1.Close()
-		defer conn2.Close()
 
 		err := universalCopy(&pipe.tx, conn1, conn2)
 		if err != nil {
@@ -44,8 +45,6 @@ func Transfer(tag string, conn1, conn2 net.Conn) {
 
 	go func() {
 		defer wg.Done()
-		defer conn2.Close()
-		defer conn1.Close()
 
 		err := universalCopy(&pipe.rx, conn2, conn1)
 		if err != nil {
