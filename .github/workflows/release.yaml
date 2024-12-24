@@ -49,6 +49,6 @@ jobs:
         with:
           name: Release ${{ github.ref_name }}
           tag: ${{ github.ref_name }}
-          artifacts: "warp-*"
+          artifacts: "warp/*"
           body: "Automated release for tag ${{ github.ref_name }}."
 
