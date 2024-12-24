@@ -32,7 +32,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: warp-${{ matrix.goos }}-${{ matrix.goarch }}
-          path: ./warp-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: artifacts
     
   release:
     needs: build-and-release
@@ -44,12 +44,11 @@ jobs:
       - name: Download artifacts
         uses: actions/download-artifact@v4
         with:
-          path: ./artifacts
-          pattern: warp-*
+          path: artifacts
       - uses: ncipollo/release-action@v1
         with:
           name: Release ${{ github.ref_name }}
           tag: ${{ github.ref_name }}
-          artifacts: "artifacts/warp-*"
+          artifacts: "artifacts/*"
           body: "Automated release for tag ${{ github.ref_name }}."
 
