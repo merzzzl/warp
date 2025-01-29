@@ -370,7 +370,19 @@ func (h *tunTransportHandler) handleDNS(ctx context.Context, conn net.Conn) {
 	}
 }
 
+func isArpaRequest(req *dns.Msg) bool {
+	if len(req.Question) == 0 {
+		return false
+	}
+
+	return strings.HasSuffix(req.Question[0].Name, ".arpa.")
+}
+
 func (h *tunTransportHandler) serveDNS(ctx context.Context, req *dns.Msg) *dns.Msg {
+	if isArpaRequest(req) {
+		return req
+	}
+
 	for _, protocol := range h.protocols {
 		rsp := protocol.LookupHost(ctx, req)
 

@@ -1,6 +1,7 @@
 package network
 
 import (
+	"errors"
 	"io"
 	"net"
 	"sync"
@@ -11,17 +12,37 @@ import (
 )
 
 type Pipe struct {
+	tag    string
 	addr1  net.Addr
 	addr2  net.Addr
 	openAt time.Time
 	rx     atomic.Uint32
 	tx     atomic.Uint32
-	tag    string
 }
 
 var openPipes = sync.Map{}
 
 func Transfer(tag string, conn1, conn2 net.Conn) {
+	if tcpConn1, ok := conn1.(*net.TCPConn); ok {
+		if err := tcpConn1.SetKeepAlive(true); err != nil {
+			log.Warn().Err(err).Msg(tag, "failed to enable keep-alive")
+		}
+
+		if err := tcpConn1.SetKeepAlivePeriod(60 * time.Second); err != nil {
+			log.Warn().Err(err).Msg(tag, "failed to set keep-alive period")
+		}
+	}
+
+	if tcpConn2, ok := conn2.(*net.TCPConn); ok {
+		if err := tcpConn2.SetKeepAlive(true); err != nil {
+			log.Warn().Err(err).Msg(tag, "failed to enable keep-alive")
+		}
+
+		if err := tcpConn2.SetKeepAlivePeriod(60 * time.Second); err != nil {
+			log.Warn().Err(err).Msg(tag, "failed to set keep-alive period")
+		}
+	}
+
 	var wg sync.WaitGroup
 
 	wg.Add(2)
@@ -73,10 +94,15 @@ func open(tag string, addr1, addr2 net.Addr) (*Pipe, func()) {
 }
 
 func List() []*Pipe {
-	list := make([]*Pipe, 0, 0)
+	list := make([]*Pipe, 0)
 
 	openPipes.Range(func(k, _ any) bool {
-		list = append(list, k.(*Pipe))
+		p, ok := k.(*Pipe)
+		if !ok {
+			return true
+		}
+
+		list = append(list, p)
 
 		return true
 	})
@@ -109,13 +135,15 @@ func (p *Pipe) TxRx() (uint32, uint32) {
 }
 
 func universalCopy(txrx *atomic.Uint32, conn1, conn2 net.Conn) error {
-	buf := make([]byte, 4096)
+	buf := make([]byte, 32*1024)
+
 	for {
 		n, err := conn1.Read(buf)
 		if err != nil {
-			if err == io.EOF {
+			if errors.Is(err, io.EOF) {
 				return nil
 			}
+
 			return err
 		}
 

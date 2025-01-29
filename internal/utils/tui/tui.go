@@ -252,7 +252,7 @@ func fun(g *gocui.Gui) {
 
 	v.Frame = false
 
-	fmt.Fprint(v, fArt())
+	_, _ = fmt.Fprint(v, fArt())
 
 	for range time.NewTicker(time.Millisecond * 75).C {
 		fgc := cl() + 1

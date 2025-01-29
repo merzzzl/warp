@@ -5,17 +5,29 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
-
-	"github.com/merzzzl/warp/internal/utils/log"
 )
 
-type resolvHandler struct {
-	interfaceName  string
-	serviceName    string
-	restoreServers []string
+var (
+	errNoNetworkService = errors.New("no service found for interface")
+	errInvalidDNS       = errors.New("invalid DNS configuration")
+	errNetworkSetup     = errors.New("network setup failed")
+)
+
+type DNSConfig struct {
+	Servers []string
 }
 
-var errNoNetworkService = errors.New("no service found for interface")
+type NetworkService struct {
+	Name      string
+	Device    string
+	DNSConfig *DNSConfig
+	GatewayIP string
+}
+
+type resolvHandler struct {
+	service   *NetworkService
+	backupDNS *DNSConfig
+}
 
 var resolv = prepareResolvHandler()
 
@@ -25,7 +37,12 @@ func prepareResolvHandler() *resolvHandler {
 		panic(err)
 	}
 
-	r, err := newResolvHandler(i)
+	g, err := defaultRouteGateway()
+	if err != nil {
+		panic(err)
+	}
+
+	r, err := newResolvHandler(i, g)
 	if err != nil {
 		panic(err)
 	}
@@ -42,72 +59,111 @@ func defaultRouteInterface() (string, error) {
 	return strings.TrimSpace(out), nil
 }
 
-func newResolvHandler(interfaceName string) (*resolvHandler, error) {
-	out, err := Command("networksetup -listnetworkserviceorder")
+func defaultRouteGateway() (string, error) {
+	out, err := Command("route -n get default | grep 'gateway' | awk '{print $2}'")
 	if err != nil {
-		return nil, fmt.Errorf("failed to get net services: %w", err)
+		return "", fmt.Errorf("failed to get default gateway: %w", err)
 	}
 
-	re, err := regexp.Compile(`\((\d+)\) (.+)\n\(Hardware Port: .+, Device: ` + interfaceName + `\)`)
+	return strings.TrimSpace(out), nil
+}
+
+func newResolvHandler(interfaceName, gatewayAddr string) (*resolvHandler, error) {
+	service, err := detectNetworkService(interfaceName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to detect network service: %w", err)
+	}
+
+	service.GatewayIP = gatewayAddr
+
+	dnsServers, err := getCurrentDNSServers(service.Name)
 	if err != nil {
 		return nil, err
 	}
+
+	if dnsServers == nil {
+		dnsServers = append(dnsServers, "8.8.8.8")
+	}
+
+	return &resolvHandler{
+		service:   service,
+		backupDNS: &DNSConfig{Servers: dnsServers},
+	}, nil
+}
+
+func detectNetworkService(interfaceName string) (*NetworkService, error) {
+	out, err := Command("networksetup -listnetworkserviceorder")
+	if err != nil {
+		return nil, fmt.Errorf("failed to get network services: %w", err)
+	}
+
+	re := regexp.MustCompile(`\((\d+)\) (.+)\n\(Hardware Port: .+, Device: ` + interfaceName + `\)`)
 
 	matches := re.FindStringSubmatch(out)
 	if len(matches) == 0 {
 		return nil, fmt.Errorf("%w: %s", errNoNetworkService, interfaceName)
 	}
 
-	serviceName := matches[2]
-
-	out, err = Command("networksetup -getdnsservers %s", serviceName)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get dns servers: %w", err)
-	}
-
-	var restoreServers []string
-	if !strings.Contains(out, "There aren't any DNS Servers set") {
-		restoreServers = strings.Fields(out)
-	}
-
-	return &resolvHandler{
-		interfaceName:  interfaceName,
-		serviceName:    serviceName,
-		restoreServers: restoreServers,
+	return &NetworkService{
+		Name:   matches[2],
+		Device: interfaceName,
 	}, nil
 }
 
-// SetDNS sets the DNS server for a network service.
-func SetDNS(dns []string) error {
+func getCurrentDNSServers(serviceName string) ([]string, error) {
+	out, err := Command("networksetup -getdnsservers %s", serviceName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get DNS servers: %w", err)
+	}
+
+	if strings.Contains(out, "There aren't any DNS Servers set") {
+		return nil, nil
+	}
+
+	return strings.Fields(out), nil
+}
+
+func (r *resolvHandler) SetDNS(dns []string) error {
+	if len(dns) == 0 {
+		return fmt.Errorf("%w: empty DNS server list", errInvalidDNS)
+	}
+
 	servers := strings.Join(dns, " ")
-	if servers == "" {
-		servers = "empty"
+	if _, err := Command("networksetup -setdnsservers %s %s", r.service.Name, servers); err != nil {
+		return fmt.Errorf("%w: %w", errNetworkSetup, err)
 	}
 
-	if _, err := Command("networksetup -setdnsservers %s %s", resolv.serviceName, servers); err != nil {
-		return fmt.Errorf("failed to set dns server: %w", err)
-	}
+	return r.flushDNSCache()
+}
 
+func (resolvHandler) flushDNSCache() error {
 	if _, err := Command("killall -HUP mDNSResponder"); err != nil {
-		log.Error().Err(err).Str("DNS", "failed to flush cache")
+		return fmt.Errorf("failed to flush DNS cache: %w", err)
 	}
 
 	return nil
 }
 
-// GetOriginalDNS returns the original DNS servers for a network service.
-func GetOriginalDNS() []string {
-	if len(resolv.restoreServers) == 0 {
-		return []string{
-			"1.1.1.1",
-			"8.8.8.8",
-		}
+func (r *resolvHandler) GetOriginalDNS() []string {
+	if len(r.backupDNS.Servers) == 0 {
+		return []string{r.service.GatewayIP}
 	}
 
-	return resolv.restoreServers
+	return r.backupDNS.Servers
 }
 
-// RestoreDNS restores the original DNS servers for a network service.
+func (r *resolvHandler) RestoreDNS() error {
+	return r.SetDNS(r.backupDNS.Servers)
+}
+
+func SetDNS(dns []string) error {
+	return resolv.SetDNS(dns)
+}
+
+func GetOriginalDNS() []string {
+	return resolv.GetOriginalDNS()
+}
+
 func RestoreDNS() error {
-	return SetDNS(resolv.restoreServers)
+	return resolv.RestoreDNS()
 }
