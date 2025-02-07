@@ -2,9 +2,7 @@ package ssh
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"io"
 	"net"
 	"regexp"
 	"strconv"
@@ -191,22 +189,14 @@ func (p *Protocol) LookupHost(_ context.Context, req *dns.Msg) *dns.Msg {
 }
 
 func (p *Protocol) HandleTCP(conn net.Conn) {
-	for {
-		remoteConn, err := p.dial(conn.LocalAddr().Network(), conn.LocalAddr().String())
-		if err != nil {
-			log.Warn().Str("dest", conn.LocalAddr().String()).Str("type", conn.LocalAddr().Network()).Err(err).Msg("SSH", "handle conn")
-
-			return
-		}
-
-		log.Info().Str("dest", conn.LocalAddr().String()).Str("type", conn.LocalAddr().Network()).Msg("SSH", "handle conn")
-
-		if errors.Is(network.Transfer("SSH", conn, remoteConn), io.EOF) {
-			log.Info().Str("dest", conn.LocalAddr().String()).Str("type", conn.LocalAddr().Network()).Msg("SSH", "reopen connection")
-
-			continue
-		}
+	remoteConn, err := p.dial(conn.LocalAddr().Network(), conn.LocalAddr().String())
+	if err != nil {
+		log.Warn().Str("dest", conn.LocalAddr().String()).Str("type", conn.LocalAddr().Network()).Err(err).Msg("SSH", "handle conn")
 
 		return
 	}
+
+	log.Info().Str("dest", conn.LocalAddr().String()).Str("type", conn.LocalAddr().Network()).Msg("SSH", "handle conn")
+
+	network.Transfer("SSH", conn, remoteConn)
 }

@@ -23,7 +23,7 @@ type Pipe struct {
 
 var openPipes = sync.Map{}
 
-func Transfer(tag string, conn1, conn2 net.Conn) error {
+func Transfer(tag string, conn1, conn2 net.Conn) {
 	var wg sync.WaitGroup
 
 	wg.Add(2)
@@ -31,19 +31,11 @@ func Transfer(tag string, conn1, conn2 net.Conn) error {
 	pipe, end := open(tag, conn1.LocalAddr(), conn1.RemoteAddr())
 	defer end()
 
-	var reopen atomic.Bool
-
 	go func() {
 		defer wg.Done()
 
 		err := universalCopy(&pipe.tx, &pipe.protocol, conn1, conn2)
 		if err != nil {
-			if errors.Is(err, io.EOF) {
-				reopen.Store(true)
-
-				return
-			}
-
 			if _, ok := err.(net.Error); !ok {
 				log.Warn().Err(err).Msg(tag, "failed to read data")
 			}
@@ -64,14 +56,7 @@ func Transfer(tag string, conn1, conn2 net.Conn) error {
 	wg.Wait()
 
 	_ = conn2.Close()
-
-	if reopen.Load() {
-		return io.EOF
-	}
-
 	_ = conn1.Close()
-
-	return nil
 }
 
 func open(tag string, addr1, addr2 net.Addr) (*Pipe, func()) {

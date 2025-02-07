@@ -8,6 +8,7 @@ import (
 	"syscall"
 
 	"github.com/merzzzl/warp/internal/protocol/local"
+	"github.com/merzzzl/warp/internal/protocol/socks5"
 	"github.com/merzzzl/warp/internal/protocol/ssh"
 	"github.com/merzzzl/warp/internal/protocol/wg"
 	"github.com/merzzzl/warp/internal/service"
@@ -91,6 +92,17 @@ func main() {
 			}
 
 			group = append(group, cbR)
+
+			continue
+		}
+
+		// Register SOCKS5
+		if pConfig.SOCKS5 != nil {
+			socks5R, err := socks5.New(pConfig.SOCKS5)
+			if err != nil {
+				log.Fatal().Err(err).Msg("APP", "failed to create SOCKS5 route")
+			}
+			group = append(group, socks5R)
 
 			continue
 		}
