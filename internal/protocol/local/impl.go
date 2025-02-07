@@ -2,6 +2,7 @@ package local
 
 import (
 	"context"
+	"net"
 
 	"github.com/miekg/dns"
 
@@ -38,6 +39,12 @@ func (p *Protocol) LookupHost(ctx context.Context, req *dns.Msg) *dns.Msg {
 	for _, s := range p.servers {
 		res, _, err := cli.ExchangeContext(ctx, req, s+":53")
 		if err != nil {
+			if err, ok := err.(net.Error); ok && err.Timeout() {
+				log.Debug().Str("server", s).DNS(req).Msg("LOC", "dns req timeout")
+
+				continue
+			}
+
 			log.Error().Str("server", s).DNS(req).Err(err).Msg("LOC", "handle dns req")
 
 			continue

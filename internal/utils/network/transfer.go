@@ -12,52 +12,38 @@ import (
 )
 
 type Pipe struct {
-	tag    string
-	addr1  net.Addr
-	addr2  net.Addr
-	openAt time.Time
-	rx     atomic.Uint32
-	tx     atomic.Uint32
+	tag      string
+	protocol atomic.Uint32
+	addr1    net.Addr
+	addr2    net.Addr
+	openAt   time.Time
+	rx       atomic.Uint32
+	tx       atomic.Uint32
 }
 
 var openPipes = sync.Map{}
 
-func Transfer(tag string, conn1, conn2 net.Conn) {
-	if tcpConn1, ok := conn1.(*net.TCPConn); ok {
-		if err := tcpConn1.SetKeepAlive(true); err != nil {
-			log.Warn().Err(err).Msg(tag, "failed to enable keep-alive")
-		}
-
-		if err := tcpConn1.SetKeepAlivePeriod(60 * time.Second); err != nil {
-			log.Warn().Err(err).Msg(tag, "failed to set keep-alive period")
-		}
-	}
-
-	if tcpConn2, ok := conn2.(*net.TCPConn); ok {
-		if err := tcpConn2.SetKeepAlive(true); err != nil {
-			log.Warn().Err(err).Msg(tag, "failed to enable keep-alive")
-		}
-
-		if err := tcpConn2.SetKeepAlivePeriod(60 * time.Second); err != nil {
-			log.Warn().Err(err).Msg(tag, "failed to set keep-alive period")
-		}
-	}
-
+func Transfer(tag string, conn1, conn2 net.Conn) error {
 	var wg sync.WaitGroup
 
 	wg.Add(2)
 
 	pipe, end := open(tag, conn1.LocalAddr(), conn1.RemoteAddr())
-
 	defer end()
-	defer conn2.Close()
-	defer conn1.Close()
+
+	var reopen atomic.Bool
 
 	go func() {
 		defer wg.Done()
 
-		err := universalCopy(&pipe.tx, conn1, conn2)
+		err := universalCopy(&pipe.tx, &pipe.protocol, conn1, conn2)
 		if err != nil {
+			if errors.Is(err, io.EOF) {
+				reopen.Store(true)
+
+				return
+			}
+
 			if _, ok := err.(net.Error); !ok {
 				log.Warn().Err(err).Msg(tag, "failed to read data")
 			}
@@ -67,7 +53,7 @@ func Transfer(tag string, conn1, conn2 net.Conn) {
 	go func() {
 		defer wg.Done()
 
-		err := universalCopy(&pipe.rx, conn2, conn1)
+		err := universalCopy(&pipe.rx, nil, conn2, conn1)
 		if err != nil {
 			if _, ok := err.(net.Error); !ok {
 				log.Warn().Err(err).Msg(tag, "failed to write data")
@@ -76,6 +62,16 @@ func Transfer(tag string, conn1, conn2 net.Conn) {
 	}()
 
 	wg.Wait()
+
+	_ = conn2.Close()
+
+	if reopen.Load() {
+		return io.EOF
+	}
+
+	_ = conn1.Close()
+
+	return nil
 }
 
 func open(tag string, addr1, addr2 net.Addr) (*Pipe, func()) {
@@ -126,6 +122,12 @@ func (p *Pipe) To() string {
 	return p.addr1.String()
 }
 
+func (p *Pipe) Protocol() string {
+	id := p.protocol.Load()
+
+	return protocols[id]
+}
+
 func (p *Pipe) OpenAt() time.Time {
 	return p.openAt
 }
@@ -134,8 +136,13 @@ func (p *Pipe) TxRx() (uint32, uint32) {
 	return p.tx.Load(), p.rx.Load()
 }
 
-func universalCopy(txrx *atomic.Uint32, conn1, conn2 net.Conn) error {
+func universalCopy(txrx, proto *atomic.Uint32, conn1, conn2 net.Conn) error {
 	buf := make([]byte, 32*1024)
+	protoDetected := false
+
+	if proto == nil {
+		protoDetected = true
+	}
 
 	for {
 		n, err := conn1.Read(buf)
@@ -145,6 +152,14 @@ func universalCopy(txrx *atomic.Uint32, conn1, conn2 net.Conn) error {
 			}
 
 			return err
+		}
+
+		if !protoDetected {
+			go func() {
+				protoDetected = true
+				id := detectProtocol(buf)
+				proto.Store(id)
+			}()
 		}
 
 		_, writeErr := conn2.Write(buf[:n])

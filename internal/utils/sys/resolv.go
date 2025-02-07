@@ -81,10 +81,6 @@ func newResolvHandler(interfaceName, gatewayAddr string) (*resolvHandler, error)
 		return nil, err
 	}
 
-	if dnsServers == nil {
-		dnsServers = append(dnsServers, "8.8.8.8")
-	}
-
 	return &resolvHandler{
 		service:   service,
 		backupDNS: &DNSConfig{Servers: dnsServers},

@@ -119,8 +119,9 @@ func layout(g *gocui.Gui, routes *service.Routes, traffic *service.Traffic, logs
 						open := time.Unix(0, 0).UTC().Add(time.Since(pipe.OpenAt())).Format("15:04:05")
 						tx, rx := pipe.TxRx()
 						rate := fmt.Sprintf("%d/%d", tx, rx)
+						protocol := pipe.Protocol()
 
-						fmt.Fprintf(v, "%s %s %s %s %s %-21s %s\n", log.Colorize(open, 7), log.Colorize(strings.ToUpper(pipe.Tag()), 11), pipe.From(), log.Colorize(strings.Repeat("»", slen), 6), log.Colorize(strings.ToUpper(pipe.Network()), 11), pipe.To(), log.Colorize(rate, 7))
+						fmt.Fprintf(v, "%s %s %s %s %s %s %s %s\n", log.Colorize(open, 7), log.Colorize(strings.ToUpper(pipe.Tag()), 11), pipe.From(), log.Colorize(strings.Repeat("»", slen), 6), log.Colorize(strings.ToUpper(pipe.Network()), 11), pipe.To(), log.Colorize(rate, 7), log.Colorize(protocol, 6))
 					}
 
 					return nil

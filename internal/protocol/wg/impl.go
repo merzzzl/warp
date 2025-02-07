@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/netip"
 	"regexp"
@@ -209,27 +210,43 @@ func (p *Protocol) LookupHost(ctx context.Context, req *dns.Msg) *dns.Msg {
 }
 
 func (p *Protocol) HandleTCP(conn net.Conn) {
-	remoteConn, err := p.tnet.Dial(conn.LocalAddr().Network(), conn.LocalAddr().String())
-	if err != nil {
-		log.Error().Err(err).Str("dest", conn.LocalAddr().String()).Str("type", conn.LocalAddr().Network()).Msg("WRG", "handle conn")
+	for {
+		remoteConn, err := p.tnet.Dial(conn.LocalAddr().Network(), conn.LocalAddr().String())
+		if err != nil {
+			log.Error().Err(err).Str("dest", conn.LocalAddr().String()).Str("type", conn.LocalAddr().Network()).Msg("WRG", "handle conn")
+
+			return
+		}
+
+		log.Info().Str("dest", conn.LocalAddr().String()).Str("type", conn.LocalAddr().Network()).Msg("WRG", "handle conn")
+
+		if errors.Is(network.Transfer("WRG", conn, remoteConn), io.EOF) {
+			log.Info().Str("dest", conn.LocalAddr().String()).Str("type", conn.LocalAddr().Network()).Msg("WRG", "reopen connection")
+
+			continue
+		}
 
 		return
 	}
-
-	log.Info().Str("dest", conn.LocalAddr().String()).Str("type", conn.LocalAddr().Network()).Msg("WRG", "handle conn")
-
-	network.Transfer("WRG", conn, remoteConn)
 }
 
 func (p *Protocol) HandleUDP(conn net.Conn) {
-	remoteConn, err := p.tnet.Dial(conn.LocalAddr().Network(), conn.LocalAddr().String())
-	if err != nil {
-		log.Error().Err(err).Str("dest", conn.LocalAddr().String()).Str("type", conn.LocalAddr().Network()).Msg("WRG", "handle conn")
+	for {
+		remoteConn, err := p.tnet.Dial(conn.LocalAddr().Network(), conn.LocalAddr().String())
+		if err != nil {
+			log.Error().Err(err).Str("dest", conn.LocalAddr().String()).Str("type", conn.LocalAddr().Network()).Msg("WRG", "handle conn")
+
+			return
+		}
+
+		log.Info().Str("dest", conn.LocalAddr().String()).Str("type", conn.LocalAddr().Network()).Msg("WRG", "handle conn")
+
+		if errors.Is(network.Transfer("WRG", conn, remoteConn), io.EOF) {
+			log.Info().Str("dest", conn.LocalAddr().String()).Str("type", conn.LocalAddr().Network()).Msg("WRG", "reopen connection")
+
+			continue
+		}
 
 		return
 	}
-
-	log.Info().Str("dest", conn.LocalAddr().String()).Str("type", conn.LocalAddr().Network()).Msg("WRG", "handle conn")
-
-	network.Transfer("WRG", conn, remoteConn)
 }
