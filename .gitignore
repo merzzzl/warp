@@ -3,3 +3,5 @@
 /.tool-versions
 /warp
 /.devcontainer
+vendor/
+.idea/

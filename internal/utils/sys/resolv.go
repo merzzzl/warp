@@ -120,11 +120,13 @@ func getCurrentDNSServers(serviceName string) ([]string, error) {
 }
 
 func (r *resolvHandler) SetDNS(dns []string) error {
+	var servers string
 	if len(dns) == 0 {
-		return fmt.Errorf("%w: empty DNS server list", errInvalidDNS)
+		servers = "Empty"
+	} else {
+		servers = strings.Join(dns, " ")
 	}
 
-	servers := strings.Join(dns, " ")
 	if _, err := Command("networksetup -setdnsservers %s %s", r.service.Name, servers); err != nil {
 		return fmt.Errorf("%w: %w", errNetworkSetup, err)
 	}
@@ -148,8 +150,14 @@ func (r *resolvHandler) GetOriginalDNS() []string {
 	return r.backupDNS.Servers
 }
 
-func (r *resolvHandler) RestoreDNS() error {
-	return r.SetDNS(r.backupDNS.Servers)
+func (r *resolvHandler) RestoreDNS(currentAddr string) error {
+	var result []string
+	for _, elem := range r.backupDNS.Servers {
+		if elem != currentAddr {
+			result = append(result, elem)
+		}
+	}
+	return r.SetDNS(result)
 }
 
 func SetDNS(dns []string) error {
@@ -160,6 +168,6 @@ func GetOriginalDNS() []string {
 	return resolv.GetOriginalDNS()
 }
 
-func RestoreDNS() error {
-	return resolv.RestoreDNS()
+func RestoreDNS(currentAddr string) error {
+	return resolv.RestoreDNS(currentAddr)
 }

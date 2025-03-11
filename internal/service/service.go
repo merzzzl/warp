@@ -322,7 +322,7 @@ func (t *Service) ListenAndServe(ctx context.Context, protocols []Protocol) erro
 
 	handler.finish()
 
-	if err := sys.RestoreDNS(); err != nil {
+	if err := sys.RestoreDNS(t.addr); err != nil {
 		log.Error().Err(err).Msg("DNS", "restore dns")
 	}
 
