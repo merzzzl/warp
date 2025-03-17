@@ -104,8 +104,8 @@ func New(config *Config) (*Service, error) {
 
 func newTunTransportHandler(routes *Routes, traffic *Traffic, protocols []Protocol, addr string) *tunTransportHandler {
 	handler := &tunTransportHandler{
-		tcpQueue:  make(chan adapter.TCPConn, 128),
-		udpQueue:  make(chan adapter.UDPConn, 128),
+		tcpQueue:  make(chan adapter.TCPConn, 12800),
+		udpQueue:  make(chan adapter.UDPConn, 12800),
 		closeCh:   make(chan struct{}, 1),
 		protocols: protocols,
 		addr:      addr,
@@ -378,9 +378,30 @@ func isArpaRequest(req *dns.Msg) bool {
 	return strings.HasSuffix(req.Question[0].Name, ".arpa.")
 }
 
+func isIPV6Request(req *dns.Msg) bool {
+	for _, q := range req.Question {
+		if q.Qtype == dns.TypeAAAA {
+			return true
+		}
+	}
+	return false
+}
+
+func emptyResponse(req *dns.Msg) *dns.Msg {
+	rsp := new(dns.Msg)
+	rsp.SetReply(req)
+	rsp.Authoritative = true
+	rsp.Rcode = dns.RcodeSuccess
+	return rsp
+}
+
 func (h *tunTransportHandler) serveDNS(ctx context.Context, req *dns.Msg) *dns.Msg {
 	if isArpaRequest(req) {
 		return req
+	}
+
+	if isIPV6Request(req) {
+		return emptyResponse(req)
 	}
 
 	for _, protocol := range h.protocols {
