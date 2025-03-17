@@ -104,8 +104,8 @@ func New(config *Config) (*Service, error) {
 
 func newTunTransportHandler(routes *Routes, traffic *Traffic, protocols []Protocol, addr string) *tunTransportHandler {
 	handler := &tunTransportHandler{
-		tcpQueue:  make(chan adapter.TCPConn, 12800),
-		udpQueue:  make(chan adapter.UDPConn, 12800),
+		tcpQueue:  make(chan adapter.TCPConn, 128),
+		udpQueue:  make(chan adapter.UDPConn, 128),
 		closeCh:   make(chan struct{}, 1),
 		protocols: protocols,
 		addr:      addr,
