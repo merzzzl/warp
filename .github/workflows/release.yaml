@@ -51,4 +51,5 @@ jobs:
           tag: ${{ github.ref_name }}
           artifacts: "artifacts/*/*"
           body: "Automated release for tag ${{ github.ref_name }}."
-
+          allowUpdates: true
+          replaceArtifacts: true
