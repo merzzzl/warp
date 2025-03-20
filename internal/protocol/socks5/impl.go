@@ -56,6 +56,7 @@ func New(cfg *Config) (*Protocol, error) {
 		auth:   auth,
 		dns:    cfg.DNS,
 		dialer: dialer,
+		domain: cfg.Domain,
 		ips:    cfg.IPs,
 	}, nil
 }
