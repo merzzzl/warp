@@ -56,7 +56,7 @@ protocols:
     user: <USER>
     password: <PASSWORD>
     host: <HOST>
-    domain: .*example\.com$
+    domain: example.com
     ips:
     - 10.0.0.0/8
 ```
