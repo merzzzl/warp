@@ -125,9 +125,10 @@ func New(ctx context.Context, cfg *Config) (*Protocol, error) {
 	}()
 
 	return &Protocol{
-		tnet: tnet,
-		dns:  cfg.DNS,
-		ips:  cfg.IPs,
+		domain: cfg.Domain,
+		tnet:   tnet,
+		dns:    cfg.DNS,
+		ips:    cfg.IPs,
 	}, nil
 }
 
