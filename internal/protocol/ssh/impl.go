@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"net"
-	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -30,7 +29,7 @@ type Protocol struct {
 	host   string
 	config *ssh.ClientConfig
 	cli    *ssh.Client
-	domain *regexp.Regexp
+	domain string
 	dns    []string
 	ips    []string
 	mx     sync.Mutex
@@ -77,20 +76,12 @@ func New(cfg *Config) (*Protocol, error) {
 		}
 	}
 
-	var rx *regexp.Regexp
-	if cfg.Domain != "" {
-		rx, err = regexp.Compile(cfg.Domain)
-		if err != nil {
-			return nil, err
-		}
-	}
-
 	return &Protocol{
 		host:   cfg.Host,
 		config: sshConfig,
 		dns:    dnsList,
 		cli:    cli,
-		domain: rx,
+		domain: cfg.Domain,
 		ips:    cfg.IPs,
 	}, nil
 }
@@ -134,23 +125,15 @@ func (p *Protocol) dial(n, addr string) (net.Conn, error) {
 	}
 }
 
+func (p *Protocol) Domain() string {
+	return p.domain
+}
+
 func (p *Protocol) FixedIPs() []string {
 	return p.ips
 }
 
 func (p *Protocol) LookupHost(_ context.Context, req *dns.Msg) *dns.Msg {
-	if p.domain == nil {
-		return req
-	}
-
-	for _, que := range req.Question {
-		if !p.domain.MatchString(que.Name[:len(que.Name)-1]) {
-			log.Debug().Str("question", que.Name).Str("regex", p.domain.String()).Msg("SSH", "does not match")
-
-			return req
-		}
-	}
-
 	for _, addr := range p.dns {
 		dnsConn, err := p.dial("tcp", addr+":53")
 		if err != nil {

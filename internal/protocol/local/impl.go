@@ -32,6 +32,10 @@ func New(cfg *Config) *Protocol {
 	}
 }
 
+func (*Protocol) Domain() string {
+	return ""
+}
+
 // LookupHost returns a DNS response for the given request and server list.
 func (p *Protocol) LookupHost(ctx context.Context, req *dns.Msg) *dns.Msg {
 	cli := new(dns.Client)

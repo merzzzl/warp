@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"net"
 	"net/netip"
-	"regexp"
 	"strconv"
 
 	"github.com/MakeNowJust/heredoc"
@@ -36,7 +35,7 @@ type Config struct {
 
 type Protocol struct {
 	tnet   *netstack.Net
-	domain *regexp.Regexp
+	domain string
 	dns    []string
 	ips    []string
 }
@@ -125,19 +124,10 @@ func New(ctx context.Context, cfg *Config) (*Protocol, error) {
 		dev.Close()
 	}()
 
-	var rx *regexp.Regexp
-	if cfg.Domain != "" {
-		rx, err = regexp.Compile(cfg.Domain)
-		if err != nil {
-			return nil, err
-		}
-	}
-
 	return &Protocol{
-		domain: rx,
-		tnet:   tnet,
-		dns:    cfg.DNS,
-		ips:    cfg.IPs,
+		tnet: tnet,
+		dns:  cfg.DNS,
+		ips:  cfg.IPs,
 	}, nil
 }
 
@@ -154,23 +144,15 @@ func encodeBase64ToHex(key string) (string, error) {
 	return hex.EncodeToString(decoded), nil
 }
 
+func (p *Protocol) Domain() string {
+	return p.domain
+}
+
 func (p *Protocol) FixedIPs() []string {
 	return p.ips
 }
 
 func (p *Protocol) LookupHost(ctx context.Context, req *dns.Msg) *dns.Msg {
-	if p.domain == nil {
-		return req
-	}
-
-	for _, que := range req.Question {
-		if !p.domain.MatchString(que.Name[:len(que.Name)-1]) {
-			log.Debug().Str("question", que.Name).Str("regex", p.domain.String()).Msg("WRG", "does not match")
-
-			return req
-		}
-	}
-
 	for _, addr := range p.dns {
 		dial, err := p.tnet.DialContext(ctx, "udp", addr+":53")
 		if err != nil {

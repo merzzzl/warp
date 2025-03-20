@@ -119,15 +119,8 @@ func getCurrentDNSServers(serviceName string) ([]string, error) {
 	return strings.Fields(out), nil
 }
 
-func (r *resolvHandler) SetDNS(dns []string) error {
-	var servers string
-	if len(dns) == 0 {
-		servers = "Empty"
-	} else {
-		servers = strings.Join(dns, " ")
-	}
-
-	if _, err := Command("networksetup -setdnsservers %s %s", r.service.Name, servers); err != nil {
+func (r *resolvHandler) SetDNS(addr, domain string) error {
+	if _, err := Command(`mkdir -p /etc/resolver && echo nameserver %s > /etc/resolver/%s`, addr, domain); err != nil {
 		return fmt.Errorf("%w: %w", errNetworkSetup, err)
 	}
 
@@ -150,24 +143,22 @@ func (r *resolvHandler) GetOriginalDNS() []string {
 	return r.backupDNS.Servers
 }
 
-func (r *resolvHandler) RestoreDNS(currentAddr string) error {
-	var result []string
-	for _, elem := range r.backupDNS.Servers {
-		if elem != currentAddr {
-			result = append(result, elem)
-		}
+func (r *resolvHandler) RestoreDNS(domain string) error {
+	if _, err := Command(`[ -f /etc/resolver/%s ] && rm /etc/resolver/%s`, domain, domain); err != nil {
+		return err
 	}
-	return r.SetDNS(result)
+
+	return r.flushDNSCache()
 }
 
-func SetDNS(dns []string) error {
-	return resolv.SetDNS(dns)
+func SetDNS(addr, domain string) error {
+	return resolv.SetDNS(addr, domain)
 }
 
 func GetOriginalDNS() []string {
 	return resolv.GetOriginalDNS()
 }
 
-func RestoreDNS(currentAddr string) error {
-	return resolv.RestoreDNS(currentAddr)
+func RestoreDNS(domain string) error {
+	return resolv.RestoreDNS(domain)
 }
