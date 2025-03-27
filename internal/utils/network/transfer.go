@@ -40,6 +40,7 @@ func Transfer(tag string, conn1, conn2 net.Conn) {
 				log.Warn().Err(err).Msg(tag, "failed to read data")
 			}
 		}
+		_ = conn2.Close()
 	}()
 
 	go func() {
@@ -51,12 +52,10 @@ func Transfer(tag string, conn1, conn2 net.Conn) {
 				log.Warn().Err(err).Msg(tag, "failed to write data")
 			}
 		}
+		_ = conn1.Close()
 	}()
 
 	wg.Wait()
-
-	_ = conn2.Close()
-	_ = conn1.Close()
 }
 
 func open(tag string, addr1, addr2 net.Addr) (*Pipe, func()) {
