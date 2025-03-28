@@ -23,7 +23,9 @@ var protocols = map[uint32]string{
 	18: "SIP",
 	19: "SOCKS5",
 	20: "Steam",
-	21: "RTMP",
+	// 21: "RTMP",
+	22: "HTTP2",
+	24: "QUIC",
 }
 
 var protocolMatchers = map[uint32]*regexp.Regexp{
@@ -48,6 +50,8 @@ var protocolMatchers = map[uint32]*regexp.Regexp{
 	19: regexp.MustCompile(`^\x05\x01\x00`),
 	20: regexp.MustCompile(`^ÿÿÿÿ`),
 	// 21: regexp.MustCompile(`^\x03.{1536}`),
+	22: regexp.MustCompile(`^PRI \* HTTP/2\.0\r\n\r\nSM\r\n\r\n`),
+	24: regexp.MustCompile(`^\xC0\x00\x00\x00\x01`),
 }
 
 func detectProtocol(data []byte) uint32 {

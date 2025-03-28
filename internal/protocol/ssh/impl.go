@@ -2,7 +2,9 @@ package ssh
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"net"
 	"strconv"
 	"strings"
@@ -174,7 +176,9 @@ func (p *Protocol) LookupHost(_ context.Context, req *dns.Msg) *dns.Msg {
 func (p *Protocol) HandleTCP(conn net.Conn) {
 	remoteConn, err := p.dial(conn.LocalAddr().Network(), conn.LocalAddr().String())
 	if err != nil {
-		log.Warn().Str("dest", conn.LocalAddr().String()).Str("type", conn.LocalAddr().Network()).Err(err).Msg("SSH", "handle conn")
+		if !errors.Is(err, io.EOF) {
+			log.Warn().Str("dest", conn.LocalAddr().String()).Str("type", conn.LocalAddr().Network()).Err(err).Msg("SSH", "handle conn")
+		}
 
 		return
 	}

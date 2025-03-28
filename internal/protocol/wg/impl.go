@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/netip"
 	"strconv"
@@ -194,7 +195,9 @@ func (p *Protocol) LookupHost(ctx context.Context, req *dns.Msg) *dns.Msg {
 func (p *Protocol) HandleTCP(conn net.Conn) {
 	remoteConn, err := p.tnet.Dial(conn.LocalAddr().Network(), conn.LocalAddr().String())
 	if err != nil {
-		log.Error().Err(err).Str("dest", conn.LocalAddr().String()).Str("type", conn.LocalAddr().Network()).Msg("WRG", "handle conn")
+		if !errors.Is(err, io.EOF) {
+			log.Warn().Str("dest", conn.LocalAddr().String()).Str("type", conn.LocalAddr().Network()).Err(err).Msg("SSH", "handle conn")
+		}
 
 		return
 	}
@@ -207,7 +210,9 @@ func (p *Protocol) HandleTCP(conn net.Conn) {
 func (p *Protocol) HandleUDP(conn net.Conn) {
 	remoteConn, err := p.tnet.Dial(conn.LocalAddr().Network(), conn.LocalAddr().String())
 	if err != nil {
-		log.Error().Err(err).Str("dest", conn.LocalAddr().String()).Str("type", conn.LocalAddr().Network()).Msg("WRG", "handle conn")
+		if !errors.Is(err, io.EOF) {
+			log.Warn().Str("dest", conn.LocalAddr().String()).Str("type", conn.LocalAddr().Network()).Err(err).Msg("SSH", "handle conn")
+		}
 
 		return
 	}
