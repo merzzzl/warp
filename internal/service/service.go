@@ -46,6 +46,7 @@ type Routes struct {
 }
 
 type Protocol interface {
+	Domain() string
 	LookupHost(ctx context.Context, req *dns.Msg) *dns.Msg
 }
 
@@ -288,8 +289,14 @@ func (t *Service) ListenAndServe(ctx context.Context, protocols []Protocol) erro
 		return err
 	}
 
-	if err := sys.SetDNS([]string{t.addr}); err != nil {
-		return err
+	for _, p := range protocols {
+		domain := p.Domain()
+		if domain == "" {
+			continue
+		}
+		if err := sys.SetDNS(t.addr, domain); err != nil {
+			return err
+		}
 	}
 
 	log.Info().Str("host", t.addr+":53").Msg("TUN", "start tun interface")
@@ -322,8 +329,14 @@ func (t *Service) ListenAndServe(ctx context.Context, protocols []Protocol) erro
 
 	handler.finish()
 
-	if err := sys.RestoreDNS(t.addr); err != nil {
-		log.Error().Err(err).Msg("DNS", "restore dns")
+	for _, p := range protocols {
+		domain := p.Domain()
+		if domain == "" {
+			continue
+		}
+		if err := sys.RestoreDNS(domain); err != nil {
+			log.Error().Err(err).Msg("DNS", "restore dns")
+		}
 	}
 
 	return nil
