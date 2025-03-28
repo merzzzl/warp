@@ -15,7 +15,6 @@ import (
 	"github.com/xjasonlyu/tun2socks/v2/core/device/tun"
 	"github.com/xjasonlyu/tun2socks/v2/core/option"
 
-	"github.com/merzzzl/warp/internal/protocol/local"
 	"github.com/merzzzl/warp/internal/utils/log"
 	"github.com/merzzzl/warp/internal/utils/sys"
 )
@@ -80,7 +79,7 @@ type Service struct {
 	addr    string
 }
 
-var defaultMTU uint32 = 1480
+var defaultMTU uint32 = 1280
 
 // New create a tun device and return the Tunnel.
 func New(config *Config) (*Service, error) {
@@ -294,6 +293,7 @@ func (t *Service) ListenAndServe(ctx context.Context, protocols []Protocol) erro
 		if domain == "" {
 			continue
 		}
+
 		if err := sys.SetDNS(t.addr, domain); err != nil {
 			return err
 		}
@@ -334,6 +334,7 @@ func (t *Service) ListenAndServe(ctx context.Context, protocols []Protocol) erro
 		if domain == "" {
 			continue
 		}
+
 		if err := sys.RestoreDNS(domain); err != nil {
 			log.Error().Err(err).Msg("DNS", "restore dns")
 		}
@@ -383,23 +384,6 @@ func (h *tunTransportHandler) handleDNS(ctx context.Context, conn net.Conn) {
 	}
 }
 
-func isArpaRequest(req *dns.Msg) bool {
-	if len(req.Question) == 0 {
-		return false
-	}
-
-	return strings.HasSuffix(req.Question[0].Name, ".arpa.")
-}
-
-func isIPV6Request(req *dns.Msg) bool {
-	for _, q := range req.Question {
-		if q.Qtype == dns.TypeAAAA {
-			return true
-		}
-	}
-	return false
-}
-
 func emptyResponse(req *dns.Msg) *dns.Msg {
 	rsp := new(dns.Msg)
 	rsp.SetReply(req)
@@ -409,39 +393,31 @@ func emptyResponse(req *dns.Msg) *dns.Msg {
 }
 
 func (h *tunTransportHandler) serveDNS(ctx context.Context, req *dns.Msg) *dns.Msg {
-	if isArpaRequest(req) {
-		return req
-	}
-
-	if isIPV6Request(req) {
-		return emptyResponse(req)
-	}
-
 	for _, protocol := range h.protocols {
-		rsp := protocol.LookupHost(ctx, req)
+		if !strings.HasSuffix(req.Question[0].Name, protocol.Domain()+".") {
+			continue
+		}
+
+		rsp := protocol.LookupHost(ctx, req.Copy())
 
 		if len(rsp.Answer) == 0 {
 			continue
 		}
 
-		if _, ok := protocol.(*local.Protocol); !ok {
-			log.Info().DNS(rsp).Msg("DNS", "resolve host")
+		log.Info().DNS(rsp).Msg("DNS", "resolve host")
 
-			if protocol, ok := protocol.(protocolFixedIPs); ok {
-				if len(protocol.FixedIPs()) > 0 {
-					log.Debug().DNS(rsp).Msg("DNS", "use fixed ips")
+		// if protocol, ok := protocol.(protocolFixedIPs); ok {
+		// 	if len(protocol.FixedIPs()) > 0 {
+		// 		log.Debug().DNS(rsp).Msg("DNS", "use fixed ips")
 
-					return rsp
-				}
+		// 		return rsp
+		// 	}
+		// }
+
+		for _, ans := range rsp.Answer {
+			if a, ok := ans.(*dns.A); ok {
+				h.routes.add(a.A.String(), protocol)
 			}
-
-			for _, ans := range rsp.Answer {
-				if a, ok := ans.(*dns.A); ok {
-					h.routes.add(a.A.String(), protocol)
-				}
-			}
-		} else {
-			log.Debug().DNS(rsp).Msg("DNS", "local route")
 		}
 
 		return rsp

@@ -189,9 +189,19 @@ func layout(g *gocui.Gui, routes *service.Routes, traffic *service.Traffic, logs
 		v.Title = "Uptime"
 
 		start := time.Now()
-		loader := []rune{'▓', '▒', '░', '░', '░', '░', '░', '░', '░', '▒'}
+		loader := []rune{'░', '░', '░', '░', '▒', '▓', '▒', '░', '░', '░'}
+		traff := 0.0
 		bar := func() string {
-			loader = append([]rune{loader[9]}, loader[:9]...)
+			rx, tx := traffic.GetRates()
+			diff := rx - tx
+
+			if diff > traff {
+				loader = append([]rune{loader[9]}, loader[:9]...)
+			} else if diff < traff {
+				loader = append(loader[1:], loader[0])
+			}
+
+			traff = diff
 
 			return string(loader[1:9])
 		}

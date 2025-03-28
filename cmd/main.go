@@ -7,7 +7,6 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/merzzzl/warp/internal/protocol/local"
 	"github.com/merzzzl/warp/internal/protocol/socks5"
 	"github.com/merzzzl/warp/internal/protocol/ssh"
 	"github.com/merzzzl/warp/internal/protocol/wg"
@@ -56,22 +55,20 @@ func main() {
 	}
 
 	group := []service.Protocol{}
-	localP := local.New(&local.Config{})
 
 	// INFO: Add more protocols here
 	// protocol must implement:
+	//
+	//  DNS resolver (optional):
 	//  required: LookupHost(ctx context.Context, req *dns.Msg) (*dns.Msg, error)
+	//  required: Domain() string
+	//
+	//  Additional methods:
 	//  optional: FixedIPs() []string
 	//  optional: HandleTCP(conn net.Conn)
 	//  optional: HandleUDP(conn net.Conn)
+
 	for _, pConfig := range cfg.Protocols {
-		// Register Local
-		if pConfig.Local != nil {
-			localP = local.New(pConfig.Local)
-
-			continue
-		}
-
 		// Register SSH
 		if pConfig.SSH != nil {
 			sshR, err := ssh.New(pConfig.SSH)
@@ -107,8 +104,6 @@ func main() {
 			continue
 		}
 	}
-
-	group = append(group, localP)
 
 	if err := srv.ListenAndServe(ctx, group); err != nil {
 		log.Fatal().Err(err).Msg("APP", "failed to run service")
