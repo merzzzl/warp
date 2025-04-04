@@ -152,8 +152,7 @@ func (h *tunTransportHandler) HandleUDP(conn adapter.UDPConn) { h.udpQueue <- co
 func (h *tunTransportHandler) handleTCPConn(ctx context.Context, conn adapter.TCPConn) {
 	defer conn.Close()
 
-	sip := strings.Split(conn.LocalAddr().String(), ":")
-	if sip[0] == h.addr && sip[1] == "53" {
+	if conn.ID().LocalPort == 53 && conn.ID().LocalAddress.String() == h.addr {
 		h.handleDNS(ctx, conn)
 
 		return
@@ -173,8 +172,7 @@ func (h *tunTransportHandler) handleTCPConn(ctx context.Context, conn adapter.TC
 func (h *tunTransportHandler) handleUDPConn(ctx context.Context, conn adapter.UDPConn) {
 	defer conn.Close()
 
-	sip := strings.Split(conn.LocalAddr().String(), ":")
-	if sip[0] == h.addr && sip[1] == "53" {
+	if conn.ID().LocalPort == 53 && conn.ID().LocalAddress.String() == h.addr {
 		h.handleDNS(ctx, conn)
 
 		return
