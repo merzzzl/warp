@@ -27,6 +27,7 @@ type ConfigProtocol struct {
 type Config struct {
 	Tunnel    *service.Config  `yaml:"tunnel"`
 	Protocols []ConfigProtocol `yaml:"protocols"`
+	ipv6      bool             `yaml:"ipv6"`
 	verbose   bool
 	debug     bool
 	fun       bool

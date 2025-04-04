@@ -105,7 +105,7 @@ func main() {
 		}
 	}
 
-	if err := srv.ListenAndServe(ctx, group); err != nil {
+	if err := srv.ListenAndServe(ctx, group, cfg.ipv6); err != nil {
 		log.Fatal().Err(err).Msg("APP", "failed to run service")
 	}
 }

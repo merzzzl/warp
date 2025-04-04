@@ -70,6 +70,7 @@ type tunTransportHandler struct {
 	routes    *Routes
 	traffic   *Traffic
 	protocols []Protocol
+	ipv6      bool
 }
 
 type Service struct {
@@ -102,13 +103,14 @@ func New(config *Config) (*Service, error) {
 	return s, nil
 }
 
-func newTunTransportHandler(routes *Routes, traffic *Traffic, protocols []Protocol, addr string) *tunTransportHandler {
+func newTunTransportHandler(routes *Routes, traffic *Traffic, protocols []Protocol, addr string, ipv6 bool) *tunTransportHandler {
 	handler := &tunTransportHandler{
 		tcpQueue:  make(chan adapter.TCPConn, 128),
 		udpQueue:  make(chan adapter.UDPConn, 128),
 		closeCh:   make(chan struct{}, 1),
 		protocols: protocols,
 		addr:      addr,
+		ipv6:      ipv6,
 	}
 
 	handler.TransportHandler = handler
@@ -263,7 +265,7 @@ func (r *Routes) add(ip string, hand Protocol) {
 }
 
 // ListenAndServe listens on the given address and serves DNS requests using the provided resolvers.
-func (t *Service) ListenAndServe(ctx context.Context, protocols []Protocol) error {
+func (t *Service) ListenAndServe(ctx context.Context, protocols []Protocol, ipv6 bool) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
@@ -272,7 +274,7 @@ func (t *Service) ListenAndServe(ctx context.Context, protocols []Protocol) erro
 		return err
 	}
 
-	handler := newTunTransportHandler(t.routes, t.traffic, protocols, t.addr)
+	handler := newTunTransportHandler(t.routes, t.traffic, protocols, t.addr, ipv6)
 
 	coreStack, err := core.CreateStack(&core.Config{
 		LinkEndpoint:     dev,
@@ -384,6 +386,15 @@ func (h *tunTransportHandler) handleDNS(ctx context.Context, conn net.Conn) {
 	}
 }
 
+func isIPV6Request(req *dns.Msg) bool {
+	for _, q := range req.Question {
+		if q.Qtype == dns.TypeAAAA {
+			return true
+		}
+	}
+	return false
+}
+
 func emptyResponse(req *dns.Msg) *dns.Msg {
 	rsp := new(dns.Msg)
 	rsp.SetReply(req)
@@ -393,6 +404,12 @@ func emptyResponse(req *dns.Msg) *dns.Msg {
 }
 
 func (h *tunTransportHandler) serveDNS(ctx context.Context, req *dns.Msg) *dns.Msg {
+	if !h.ipv6 && isIPV6Request(req) {
+		log.Debug().Msg("DNS", "drop ipv6 request")
+
+		return emptyResponse(req)
+	}
+
 	for _, protocol := range h.protocols {
 		if !strings.HasSuffix(req.Question[0].Name, protocol.Domain()+".") {
 			continue
