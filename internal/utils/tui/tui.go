@@ -189,25 +189,60 @@ func layout(g *gocui.Gui, routes *service.Routes, traffic *service.Traffic, logs
 		v.Title = "Uptime"
 
 		start := time.Now()
-		loader := []rune{'░', '░', '░', '░', '▒', '▓', '▒', '░', '░', '░', '░'}
-		traff := 0.0
+		loader := []rune("        ")
+		transf := 0.0
+		prevTotal := 0.0
 		bar := func() string {
-			rx, tx := traffic.GetRates()
-			diff := rx - tx
+			rx, tx := traffic.GetTransferred()
+			total := rx + tx
+			transf = total - prevTotal
+			prevTotal = total
 
-			if diff > traff {
-				loader = append([]rune{loader[9]}, loader[:9]...)
-			} else if diff < traff {
-				loader = append(loader[1:], loader[0])
+			var newChar rune
+			switch {
+			case transf < 1:
+				newChar = ' '
+			case transf < 1024:
+				if loader[7] == '⢀' {
+					newChar = '⡀'
+				} else {
+					newChar = '⢀'
+				}
+			case transf < 1024*32:
+				newChar = '⣀'
+			case transf < 1024*64:
+				if loader[7] == '⣠' {
+					newChar = '⣄'
+				} else {
+					newChar = '⣠'
+				}
+			case transf < 1024*128:
+				newChar = '⣤'
+			case transf < 1024*256:
+				if loader[7] == '⣴' {
+					newChar = '⣦'
+				} else {
+					newChar = '⣴'
+				}
+			case transf < 1024*512:
+				newChar = '⣶'
+			case transf < 1024*1024:
+				if loader[7] == '⣾' {
+					newChar = '⣷'
+				} else {
+					newChar = '⣾'
+				}
+			default:
+				newChar = '⣿'
 			}
 
-			traff = diff
-
-			return string(loader[1:9])
+			// Сдвигаем символы влево и добавляем новый в конец
+			loader = append(loader[1:], newChar)
+			return string(loader)
 		}
 
 		go func() {
-			for range time.NewTicker(time.Millisecond * 100).C {
+			for range time.NewTicker(time.Millisecond * 1000).C {
 				g.Update(func(*gocui.Gui) error {
 					v.Clear()
 
