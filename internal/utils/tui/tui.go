@@ -111,17 +111,20 @@ func layout(g *gocui.Gui, routes *service.Routes, traffic *service.Traffic, logs
 					list := network.List()
 
 					sort.Slice(list, func(i, j int) bool {
-						return list[i].OpenAt().Before(list[j].OpenAt())
+						return list[i].OpenCount > list[j].OpenCount
 					})
 
 					for _, pipe := range list {
-						slen := 22 - len(pipe.From())
-						open := time.Unix(0, 0).UTC().Add(time.Since(pipe.OpenAt())).Format("15:04:05")
-						tx, rx := pipe.TxRx()
-						rate := fmt.Sprintf("%d/%d", tx, rx)
-						protocol := pipe.Protocol()
-
-						fmt.Fprintf(v, "%s %s %s %s %s %s %s %s\n", log.Colorize(open, 7), log.Colorize(strings.ToUpper(pipe.Tag()), 11), pipe.From(), log.Colorize(strings.Repeat("»", slen), 6), log.Colorize(strings.ToUpper(pipe.Network()), 11), pipe.To(), log.Colorize(rate, 7), log.Colorize(protocol, 6))
+						fmt.Fprintf(v, "%s %s %s %s %s %s %s %s\n",
+							log.Colorize(time.Unix(0, 0).UTC().Add(time.Since(pipe.OpenAt)).Format("15:04:05"), 7),
+							fmt.Sprintf("%.3d", pipe.OpenCount),
+							log.Colorize(strings.Repeat("»", 3), 6),
+							log.Colorize(strings.ToUpper(pipe.Tag), 11),
+							log.Colorize(strings.Repeat("»", 3), 6),
+							log.Colorize(strings.ToUpper(pipe.Dest.Network()), 11),
+							pipe.Dest.String(),
+							log.Colorize(pipe.Protocol, 6),
+						)
 					}
 
 					return nil

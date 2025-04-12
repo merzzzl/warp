@@ -2,6 +2,7 @@ package network
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"sync"
@@ -17,8 +18,14 @@ type Pipe struct {
 	addr1    net.Addr
 	addr2    net.Addr
 	openAt   time.Time
-	rx       atomic.Uint32
-	tx       atomic.Uint32
+}
+
+type PipeGroup struct {
+	Tag       string
+	Protocol  string
+	Dest      net.Addr
+	OpenAt    time.Time
+	OpenCount int
 }
 
 var openPipes = sync.Map{}
@@ -34,7 +41,7 @@ func Transfer(tag string, conn1, conn2 net.Conn) {
 	go func() {
 		defer wg.Done()
 
-		err := universalCopy(&pipe.tx, &pipe.protocol, conn1, conn2)
+		err := universalCopy(&pipe.protocol, conn1, conn2)
 		if err != nil {
 			if _, ok := err.(net.Error); !ok {
 				log.Warn().Err(err).Msg(tag, "failed to read data")
@@ -46,7 +53,7 @@ func Transfer(tag string, conn1, conn2 net.Conn) {
 	go func() {
 		defer wg.Done()
 
-		err := universalCopy(&pipe.rx, nil, conn2, conn1)
+		err := universalCopy(nil, conn2, conn1)
 		if err != nil {
 			if _, ok := err.(net.Error); !ok {
 				log.Warn().Err(err).Msg(tag, "failed to write data")
@@ -73,8 +80,8 @@ func open(tag string, addr1, addr2 net.Addr) (*Pipe, func()) {
 	}
 }
 
-func List() []*Pipe {
-	list := make([]*Pipe, 0)
+func List() []*PipeGroup {
+	list := make(map[string]*PipeGroup)
 
 	openPipes.Range(func(k, _ any) bool {
 		p, ok := k.(*Pipe)
@@ -82,45 +89,38 @@ func List() []*Pipe {
 			return true
 		}
 
-		list = append(list, p)
+		key := fmt.Sprintf("%s:%s", p.addr1.String(), p.tag)
+		pgr := &PipeGroup{}
+
+		if v, ok := list[key]; ok {
+			pgr = v
+		} else {
+			pgr.Tag = p.tag
+			pgr.Dest = p.addr1
+			pgr.OpenCount = 1
+			pgr.Protocol = protocols[p.protocol.Load()]
+		}
+
+		pgr.OpenCount++
+
+		if p.openAt.Before(pgr.OpenAt) {
+			pgr.OpenAt = p.openAt
+		}
+
+		list[key] = pgr
 
 		return true
 	})
 
-	return list
+	groups := make([]*PipeGroup, 0, len(list))
+	for _, v := range list {
+		groups = append(groups, v)
+	}
+
+	return groups
 }
 
-func (p *Pipe) Network() string {
-	return p.addr1.Network()
-}
-
-func (p *Pipe) Tag() string {
-	return p.tag
-}
-
-func (p *Pipe) From() string {
-	return p.addr2.String()
-}
-
-func (p *Pipe) To() string {
-	return p.addr1.String()
-}
-
-func (p *Pipe) Protocol() string {
-	id := p.protocol.Load()
-
-	return protocols[id]
-}
-
-func (p *Pipe) OpenAt() time.Time {
-	return p.openAt
-}
-
-func (p *Pipe) TxRx() (uint32, uint32) {
-	return p.tx.Load(), p.rx.Load()
-}
-
-func universalCopy(txrx, proto *atomic.Uint32, conn1, conn2 net.Conn) error {
+func universalCopy(proto *atomic.Uint32, conn1, conn2 net.Conn) error {
 	buf := make([]byte, 32*1024)
 	protoDetected := false
 
@@ -150,7 +150,5 @@ func universalCopy(txrx, proto *atomic.Uint32, conn1, conn2 net.Conn) error {
 		if writeErr != nil {
 			return writeErr
 		}
-
-		txrx.Add(1)
 	}
 }
