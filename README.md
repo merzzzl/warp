@@ -79,6 +79,7 @@ The `~/.warp.yaml` configuration file should contain tunnel and protocol setting
 tunnel:
   name: utun11         # Name of the TUN interface to create
   ip: 192.168.127.0    # IP address to assign to the interface
+  serve_dns: true      # ServeDNS allow to swap system dns to warp dns
 
 # Connection protocols (only one protocol in each list item is used)
 protocols:

@@ -20,9 +20,9 @@ import (
 )
 
 type Config struct {
-	Name     string
-	IP       string
-	ServeDNS bool
+	Name     string `yaml:"name"`
+	IP       string `yaml:"ip"`
+	ServeDNS bool   `yaml:"serve_dns"`
 }
 
 type trafficConn struct {
