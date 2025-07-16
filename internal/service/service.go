@@ -46,7 +46,7 @@ type Routes struct {
 }
 
 type Protocol interface {
-	Domain() string
+	Domains() []string
 	LookupHost(ctx context.Context, req *dns.Msg) *dns.Msg
 }
 
@@ -292,8 +292,8 @@ func (t *Service) ListenAndServe(ctx context.Context, protocols []Protocol, ipv6
 	}
 
 	for _, p := range protocols {
-		domain := p.Domain()
-		if domain == "" {
+		domains := p.Domains()
+		if len(domains) == 0 {
 			continue
 		}
 
@@ -308,15 +308,17 @@ func (t *Service) ListenAndServe(ctx context.Context, protocols []Protocol, ipv6
 				}
 			}()
 		} else {
-			if err := sys.SetDNS(t.addr, domain); err != nil {
-				return err
-			}
-
-			defer func() {
-				if err := sys.RestoreDNS(domain); err != nil {
-					log.Error().Err(err).Msg("DNS", "restore dns")
+			for i := range domains {
+				if err := sys.SetDNS(t.addr, domains[i]); err != nil {
+					return err
 				}
-			}()
+
+				defer func(domain string) {
+					if err := sys.RestoreDNS(domain); err != nil {
+						log.Error().Err(err).Msg("DNS", "restore dns")
+					}
+				}(domains[i])
+			}
 		}
 	}
 
@@ -419,7 +421,15 @@ func (h *tunTransportHandler) serveDNS(ctx context.Context, req *dns.Msg) *dns.M
 	}
 
 	for _, protocol := range h.protocols {
-		if !strings.HasSuffix(req.Question[0].Name, protocol.Domain()+".") {
+		var isAllow bool
+
+		for _, domain := range protocol.Domains() {
+			if strings.HasSuffix(req.Question[0].Name, domain+".") {
+				isAllow = true
+			}
+		}
+
+		if !isAllow {
 			continue
 		}
 

@@ -22,19 +22,19 @@ type Config struct {
 	User     string   `yaml:"user"`
 	Password string   `yaml:"password"`
 	Host     string   `yaml:"host"`
-	Domain   string   `yaml:"domain"`
+	Domains  []string `yaml:"domains"`
 	IPs      []string `yaml:"ips"`
 	DNS      []string `yaml:"dns"`
 }
 
 type Protocol struct {
-	host   string
-	config *ssh.ClientConfig
-	cli    *ssh.Client
-	domain string
-	dns    []string
-	ips    []string
-	mx     sync.Mutex
+	host    string
+	config  *ssh.ClientConfig
+	cli     *ssh.Client
+	domains []string
+	dns     []string
+	ips     []string
+	mx      sync.Mutex
 }
 
 func New(cfg *Config) (*Protocol, error) {
@@ -79,12 +79,12 @@ func New(cfg *Config) (*Protocol, error) {
 	}
 
 	return &Protocol{
-		host:   cfg.Host,
-		config: sshConfig,
-		dns:    dnsList,
-		cli:    cli,
-		domain: cfg.Domain,
-		ips:    cfg.IPs,
+		host:    cfg.Host,
+		config:  sshConfig,
+		dns:     dnsList,
+		cli:     cli,
+		domains: cfg.Domains,
+		ips:     cfg.IPs,
 	}, nil
 }
 
@@ -127,8 +127,8 @@ func (p *Protocol) dial(n, addr string) (net.Conn, error) {
 	}
 }
 
-func (p *Protocol) Domain() string {
-	return p.domain
+func (p *Protocol) Domains() []string {
+	return p.domains
 }
 
 func (p *Protocol) FixedIPs() []string {

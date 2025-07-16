@@ -28,17 +28,17 @@ type Config struct {
 	PrivateKey    string   `yaml:"private_key"`
 	PeerPublicKey string   `yaml:"peer_public_key"`
 	Endpoint      string   `yaml:"endpoint"`
-	Domain        string   `yaml:"domain"`
+	Domains       []string `yaml:"domains"`
 	Address       string   `yaml:"address"`
 	DNS           []string `yaml:"dns"`
 	IPs           []string `yaml:"ips"`
 }
 
 type Protocol struct {
-	tnet   *netstack.Net
-	domain string
-	dns    []string
-	ips    []string
+	tnet    *netstack.Net
+	domains []string
+	dns     []string
+	ips     []string
 }
 
 var defaultMTU = 1480
@@ -126,10 +126,10 @@ func New(ctx context.Context, cfg *Config) (*Protocol, error) {
 	}()
 
 	return &Protocol{
-		domain: cfg.Domain,
-		tnet:   tnet,
-		dns:    cfg.DNS,
-		ips:    cfg.IPs,
+		domains: cfg.Domains,
+		tnet:    tnet,
+		dns:     cfg.DNS,
+		ips:     cfg.IPs,
 	}, nil
 }
 
@@ -146,8 +146,8 @@ func encodeBase64ToHex(key string) (string, error) {
 	return hex.EncodeToString(decoded), nil
 }
 
-func (p *Protocol) Domain() string {
-	return p.domain
+func (p *Protocol) Domains() []string {
+	return p.domains
 }
 
 func (p *Protocol) FixedIPs() []string {

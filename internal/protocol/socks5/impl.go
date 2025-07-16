@@ -21,19 +21,19 @@ type Config struct {
 	User     string   `yaml:"user"`
 	Password string   `yaml:"password"`
 	Host     string   `yaml:"host"`
-	Domain   string   `yaml:"domain"`
+	Domains  []string `yaml:"domains"`
 	IPs      []string `yaml:"ips"`
 	DNS      []string `yaml:"dns"`
 }
 
 type Protocol struct {
-	host   string
-	dialer proxy.Dialer
-	auth   *proxy.Auth
-	domain string
-	dns    []string
-	ips    []string
-	mx     sync.Mutex
+	host    string
+	dialer  proxy.Dialer
+	auth    *proxy.Auth
+	domains []string
+	dns     []string
+	ips     []string
+	mx      sync.Mutex
 }
 
 func New(cfg *Config) (*Protocol, error) {
@@ -54,12 +54,12 @@ func New(cfg *Config) (*Protocol, error) {
 	log.Debug().Str("url", fmt.Sprintf("%s", cfg.Host)).Msg("SOC", "open connection")
 
 	return &Protocol{
-		host:   cfg.Host,
-		auth:   auth,
-		dns:    cfg.DNS,
-		dialer: dialer,
-		domain: cfg.Domain,
-		ips:    cfg.IPs,
+		host:    cfg.Host,
+		auth:    auth,
+		dns:     cfg.DNS,
+		dialer:  dialer,
+		domains: cfg.Domains,
+		ips:     cfg.IPs,
 	}, nil
 }
 
@@ -101,8 +101,8 @@ func (p *Protocol) dial(n, addr string) (net.Conn, error) {
 	}
 }
 
-func (p *Protocol) Domain() string {
-	return p.domain
+func (p *Protocol) Domains() []string {
+	return p.domains
 }
 
 func (p *Protocol) FixedIPs() []string {

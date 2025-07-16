@@ -107,7 +107,8 @@ protocols:
       user: username            # SSH username
       password: password123     # Password (SSH keys recommended)
       host: example.com         # SSH server host
-      domain: corp.example.com  # Domain for DNS queries via tunnel
+      domains:                  # Domains for DNS queries via tunnel
+        - corp.example.com 
       dns:                      # Optional: DNS servers to use
         - 8.8.8.8
       ips:                      # Optional: Subnet list for routing
@@ -123,13 +124,14 @@ tunnel:
   ip: 192.168.127.0
 protocols:
   - socks5:
-      user: username            # Optional: SOCKS5 username
-      password: password123     # Optional: SOCKS5 password
+      user: username                # Optional: SOCKS5 username
+      password: password123         # Optional: SOCKS5 password
       host: proxy.example.com:1080  # SOCKS5 proxy server address with port
-      domain: corp.example.com  # Domain for DNS queries via proxy
-      dns:                      # DNS servers
+      domains:                      # Domains for DNS queries via tunnel
+        - corp.example.com 
+      dns:                          # DNS servers
         - 8.8.8.8
-      ips:                      # Subnet list for routing
+      ips:                          # Subnet list for routing
         - 192.168.1.0/24
 ```
 
@@ -141,14 +143,15 @@ tunnel:
   ip: 192.168.127.0
 protocols:
   - wireguard:
-      private_key: aCZ7I1s+...    # WireGuard private key (Base64)
-      peer_public_key: o78dBF...  # Peer public key (Base64)
+      private_key: aCZ7I1s+...        # WireGuard private key (Base64)
+      peer_public_key: o78dBF...      # Peer public key (Base64)
       endpoint: wg.example.com:51820  # WireGuard server address with port
-      domain: vpn.example.com     # Domain for DNS queries
-      address: 10.66.66.2         # IP address for WireGuard interface
-      dns:                        # WireGuard DNS servers
+      domains:                        # Domains for DNS queries via tunnel
+        - corp.example.com 
+      address: 10.66.66.2             # IP address for WireGuard interface
+      dns:                            # WireGuard DNS servers
         - 10.66.66.1
-      ips:                        # Subnet list for routing
+      ips:                            # Subnet list for routing
         - 10.66.66.0/24
 ```
 
