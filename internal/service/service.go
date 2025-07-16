@@ -20,8 +20,9 @@ import (
 )
 
 type Config struct {
-	Name string
-	IP   string
+	Name     string
+	IP       string
+	ServeDNS bool
 }
 
 type trafficConn struct {
@@ -74,10 +75,11 @@ type tunTransportHandler struct {
 }
 
 type Service struct {
-	routes  *Routes
-	traffic *Traffic
-	name    string
-	addr    string
+	routes   *Routes
+	traffic  *Traffic
+	serveDNS bool
+	name     string
+	addr     string
 }
 
 var defaultMTU uint32 = 1280
@@ -94,10 +96,11 @@ func New(config *Config) (*Service, error) {
 	}
 
 	s := &Service{
-		name:    config.Name,
-		addr:    config.IP,
-		routes:  routes,
-		traffic: traffic,
+		name:     config.Name,
+		addr:     config.IP,
+		routes:   routes,
+		traffic:  traffic,
+		serveDNS: config.ServeDNS,
 	}
 
 	return s, nil
@@ -294,8 +297,26 @@ func (t *Service) ListenAndServe(ctx context.Context, protocols []Protocol, ipv6
 			continue
 		}
 
-		if err := sys.SetDNS(t.addr, domain); err != nil {
-			return err
+		if t.serveDNS {
+			if err := sys.LSetDNS([]string{t.addr}); err != nil {
+				return err
+			}
+
+			defer func() {
+				if err := sys.LRestoreDNS(); err != nil {
+					log.Error().Err(err).Msg("DNS", "restore dns")
+				}
+			}()
+		} else {
+			if err := sys.SetDNS(t.addr, domain); err != nil {
+				return err
+			}
+
+			defer func() {
+				if err := sys.RestoreDNS(domain); err != nil {
+					log.Error().Err(err).Msg("DNS", "restore dns")
+				}
+			}()
 		}
 	}
 
@@ -328,17 +349,6 @@ func (t *Service) ListenAndServe(ctx context.Context, protocols []Protocol, ipv6
 	}
 
 	handler.finish()
-
-	for _, p := range protocols {
-		domain := p.Domain()
-		if domain == "" {
-			continue
-		}
-
-		if err := sys.RestoreDNS(domain); err != nil {
-			log.Error().Err(err).Msg("DNS", "restore dns")
-		}
-	}
 
 	return nil
 }
@@ -421,13 +431,13 @@ func (h *tunTransportHandler) serveDNS(ctx context.Context, req *dns.Msg) *dns.M
 
 		log.Info().DNS(rsp).Msg("DNS", "resolve host")
 
-		// if protocol, ok := protocol.(protocolFixedIPs); ok {
-		// 	if len(protocol.FixedIPs()) > 0 {
-		// 		log.Debug().DNS(rsp).Msg("DNS", "use fixed ips")
+		if protocol, ok := protocol.(protocolFixedIPs); ok {
+			if len(protocol.FixedIPs()) > 0 {
+				log.Debug().DNS(rsp).Msg("DNS", "use fixed ips")
 
-		// 		return rsp
-		// 	}
-		// }
+				return rsp
+			}
+		}
 
 		for _, ans := range rsp.Answer {
 			if a, ok := ans.(*dns.A); ok {
