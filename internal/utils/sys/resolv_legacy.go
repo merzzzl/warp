@@ -126,7 +126,11 @@ func (r *resolvHandler) RestoreDNS() error {
 }
 
 func LSetDNS(dns []string) error {
-	return resolv.SetDNS(append(dns, resolv.DNSServers...))
+	return resolv.SetDNS(dns)
+}
+
+func LGetOriginalDNS() []string {
+	return resolv.GetOriginalDNS()
 }
 
 func LRestoreDNS() error {

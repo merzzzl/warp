@@ -72,6 +72,7 @@ type tunTransportHandler struct {
 	traffic   *Traffic
 	protocols []Protocol
 	ipv6      bool
+	allDNS    bool
 }
 
 type Service struct {
@@ -106,7 +107,7 @@ func New(config *Config) (*Service, error) {
 	return s, nil
 }
 
-func newTunTransportHandler(routes *Routes, traffic *Traffic, protocols []Protocol, addr string, ipv6 bool) *tunTransportHandler {
+func newTunTransportHandler(routes *Routes, traffic *Traffic, protocols []Protocol, addr string, ipv6, serveDNS bool) *tunTransportHandler {
 	handler := &tunTransportHandler{
 		tcpQueue:  make(chan adapter.TCPConn, 128),
 		udpQueue:  make(chan adapter.UDPConn, 128),
@@ -114,6 +115,7 @@ func newTunTransportHandler(routes *Routes, traffic *Traffic, protocols []Protoc
 		protocols: protocols,
 		addr:      addr,
 		ipv6:      ipv6,
+		allDNS:    serveDNS,
 	}
 
 	handler.TransportHandler = handler
@@ -275,7 +277,7 @@ func (t *Service) ListenAndServe(ctx context.Context, protocols []Protocol, ipv6
 		return err
 	}
 
-	handler := newTunTransportHandler(t.routes, t.traffic, protocols, t.addr, ipv6)
+	handler := newTunTransportHandler(t.routes, t.traffic, protocols, t.addr, ipv6, t.serveDNS)
 
 	coreStack, err := core.CreateStack(&core.Config{
 		LinkEndpoint:     dev,
@@ -456,6 +458,22 @@ func (h *tunTransportHandler) serveDNS(ctx context.Context, req *dns.Msg) *dns.M
 		}
 
 		return rsp
+	}
+
+	if h.allDNS {
+		nsList := sys.LGetOriginalDNS()
+
+		if len(nsList) > 0 {
+			cli := new(dns.Client)
+			addr := nsList[0] + ":53"
+
+			res, _, err := cli.ExchangeContext(ctx, req, addr)
+			if err != nil {
+				log.Error().Str("server", addr).DNS(req).Err(err).Msg("DNS", "handle local dns req")
+			}
+
+			return res
+		}
 	}
 
 	return req
